@@ -31,7 +31,7 @@
       <div class="top-actions">
         <button id="simulateOnline">Pedido online</button>
         <button id="simulateCorporate">Contrato corporativo</button>
-        <button id="exportAll">Exportar Excel</button>
+        <button id="exportAll">Exportar CSV</button>
       </div>
     </header>
 
@@ -119,14 +119,14 @@
     <section class="screen" id="clients">
       <article class="panel">
         <div class="panel-head">
-          <h2>Clientes y niños asignados</h2>
+          <h2>Gestion de clientes</h2>
           <button id="exportClients">Exportar clientes</button>
         </div>
         <div class="form-grid five">
           <label>Nombre<input id="clientName" placeholder="Boo Thompson"></label>
           <label>Correo<input id="clientEmail" type="email" placeholder="boo@humanmail.com"></label>
           <label>Tipo<select id="clientType"><option>Cliente Individual</option><option>Cliente Corporativo</option></select></label>
-          <label>Canal<select id="clientChannel"><option>Online</option><option>Punto Físico</option><option>Corporaciones</option></select></label>
+          <label>Canal<select id="clientChannel"><option>Online</option><option>Punto Fisico</option><option>Corporaciones</option></select></label>
           <label>Sucursal<select id="clientBranch"></select></label>
         </div>
         <div class="actions">
@@ -182,7 +182,7 @@
           </div>
           <div class="form-grid">
             <label>Cliente<select id="invoiceClient"></select></label>
-            <label>Canal<select id="invoiceChannel"><option>Online</option><option>Punto Físico</option><option>Corporaciones</option></select></label>
+            <label>Canal<select id="invoiceChannel"><option>Online</option><option>Punto Fisico</option><option>Corporaciones</option></select></label>
             <label>Concepto<input id="invoiceConcept" placeholder="Venta de articulos comerciales"></label>
             <label>Importe<input id="invoiceAmount" type="number" min="1" value="1200"></label>
           </div>
@@ -200,7 +200,7 @@
           </div>
           <div class="form-grid">
             <label>Buscar<input id="invoiceSearch" placeholder="Folio o cliente"></label>
-            <label>Canal<select id="invoiceFilter"><option>Todos</option><option>Online</option><option>Punto Físico</option><option>Corporaciones</option></select></label>
+            <label>Canal<select id="invoiceFilter"><option>Todos</option><option>Online</option><option>Punto Fisico</option><option>Corporaciones</option></select></label>
           </div>
           <div class="table-wrap">
             <table>

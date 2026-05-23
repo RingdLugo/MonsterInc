@@ -62,6 +62,8 @@ function ensureBaseData(PDO $pdo): void
         $categoryExistsStmt->execute([$productId]);
         if ((int)$categoryExistsStmt->fetchColumn() === 0) {
             $categoryStmt->execute([$productId, $category]);
+        } else {
+            $pdo->prepare('UPDATE CATEGORIA_PRODUCTO SET categoria = ? WHERE id_producto = ? AND fecha_fin IS NULL')->execute([$category, $productId]);
         }
 
         foreach (['Linea' => $linePrice, 'Fisica' => round($linePrice * 1.05, 2), 'Corporativo' => round($linePrice * 0.90, 2)] as $channel => $price) {

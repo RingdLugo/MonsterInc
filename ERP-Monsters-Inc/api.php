@@ -54,6 +54,23 @@ function ensureEmployee(PDO $pdo, string $name, string $email, string $password,
     $stmt->execute([$name, $email, password_hash($password, PASSWORD_DEFAULT), $roleId, $branchId, $regionId]);
 }
 
+function ensureRolePermissions(PDO $pdo, int $roleId, array $permissions): void
+{
+    $findPermission = $pdo->prepare('SELECT id_permiso FROM PERMISO WHERE nombre_permiso = ? LIMIT 1');
+    $insertPermission = $pdo->prepare('INSERT INTO PERMISO (nombre_permiso) VALUES (?)');
+    $linkPermission = $pdo->prepare('INSERT IGNORE INTO ROL_PERMISO (id_rol, id_permiso) VALUES (?, ?)');
+
+    foreach ($permissions as $permission) {
+        $findPermission->execute([$permission]);
+        $permissionId = $findPermission->fetchColumn();
+        if ($permissionId === false) {
+            $insertPermission->execute([$permission]);
+            $permissionId = (int)$pdo->lastInsertId();
+        }
+        $linkPermission->execute([$roleId, (int)$permissionId]);
+    }
+}
+
 function ensureCatalogs(PDO $pdo): void
 {
     $pdo->exec("INSERT IGNORE INTO REGION (id_region, nombre_region) VALUES (1, 'Centro'), (2, 'Norte'), (3, 'Corporativo')");
@@ -68,6 +85,13 @@ function ensureCatalogs(PDO $pdo): void
     $seller = ensureRole($pdo, 'Vendedor');
     $warehouse = ensureRole($pdo, 'Almacenista');
     $accountant = ensureRole($pdo, 'Contador');
+
+    $allPermissions = ['Ver tablero', 'Procesar ventas', 'Gestionar clientes', 'Gestionar inventario', 'Emitir CFDI', 'Gestionar envios', 'Gestionar accesos', 'Consultar bitacora', 'Generar cortes'];
+    ensureRolePermissions($pdo, $admin, $allPermissions);
+    ensureRolePermissions($pdo, $manager, ['Ver tablero', 'Procesar ventas', 'Gestionar clientes', 'Gestionar inventario', 'Emitir CFDI', 'Gestionar envios', 'Consultar bitacora', 'Generar cortes']);
+    ensureRolePermissions($pdo, $seller, ['Ver tablero', 'Procesar ventas', 'Gestionar clientes']);
+    ensureRolePermissions($pdo, $warehouse, ['Ver tablero', 'Gestionar inventario', 'Gestionar envios']);
+    ensureRolePermissions($pdo, $accountant, ['Ver tablero', 'Emitir CFDI', 'Generar cortes', 'Consultar bitacora']);
 
     ensureEmployee($pdo, 'Admin General', 'admin@monsters.com', 'Admin123*', $admin, 1, 1);
     ensureEmployee($pdo, 'Celia Mae', 'gerente@monsters.com', 'Gerente123*', $manager, 1, 1);
@@ -103,7 +127,11 @@ function ensureCatalogs(PDO $pdo): void
         }
 
         $categoryExists->execute([$id]);
-        if ((int)$categoryExists->fetchColumn() === 0) $insertCategory->execute([$id, $category]);
+        if ((int)$categoryExists->fetchColumn() === 0) {
+            $insertCategory->execute([$id, $category]);
+        } else {
+            $pdo->prepare('UPDATE CATEGORIA_PRODUCTO SET categoria = ? WHERE id_producto = ? AND fecha_fin IS NULL')->execute([$category, $id]);
+        }
 
         foreach (['Linea' => $linePrice, 'Fisica' => round($linePrice * 1.05, 2), 'Corporativo' => round($linePrice * 0.90, 2)] as $channel => $price) {
             $priceExists->execute([$id, $channel]);
@@ -250,6 +278,10 @@ function dashboardData(PDO $pdo): array
         ORDER BY e.id_empleado ASC")->fetchAll();
 
     $roles = $pdo->query('SELECT id_rol AS id, nombre_rol AS nombre FROM ROL ORDER BY id_rol')->fetchAll();
+    $rolePermissions = $pdo->query("SELECT rp.id_rol, p.nombre_permiso
+        FROM ROL_PERMISO rp
+        INNER JOIN PERMISO p ON p.id_permiso = rp.id_permiso
+        ORDER BY rp.id_rol, p.nombre_permiso")->fetchAll();
     $branches = $pdo->query('SELECT id_sucursal AS id, nombre FROM SUCURSAL ORDER BY id_sucursal')->fetchAll();
 
     $salesByChannel = $pdo->query("SELECT canal_venta AS canal, COUNT(*) AS ventas, COALESCE(SUM(total),0) AS total FROM VENTA GROUP BY canal_venta")->fetchAll();
@@ -271,13 +303,19 @@ function dashboardData(PDO $pdo): array
         INNER JOIN CLIENTE c ON c.id_cliente = v.id_cliente
         ORDER BY f.id_factura DESC")->fetchAll();
 
+    $sales = $pdo->query("SELECT v.id_venta AS id, v.fecha_hora, v.canal_venta AS canal, v.subtotal, v.total, c.nombre_razon_social AS cliente, s.nombre AS sucursal
+        FROM VENTA v
+        INNER JOIN CLIENTE c ON c.id_cliente = v.id_cliente
+        INNER JOIN SUCURSAL s ON s.id_sucursal = v.id_sucursal
+        ORDER BY v.fecha_hora DESC, v.id_venta DESC")->fetchAll();
+
     $logs = $pdo->query("SELECT b.id_bitacora AS id, b.fecha, b.accion, e.nombre AS empleado
         FROM BITACORA b
         INNER JOIN EMPLEADO e ON e.id_empleado = b.id_empleado
         ORDER BY b.fecha DESC, b.id_bitacora DESC
         LIMIT 50")->fetchAll();
 
-    return compact('products', 'inventory', 'clients', 'employees', 'roles', 'branches', 'salesByChannel', 'salesByRegion', 'shipments', 'invoices', 'logs');
+    return compact('products', 'inventory', 'clients', 'employees', 'roles', 'rolePermissions', 'branches', 'salesByChannel', 'salesByRegion', 'shipments', 'invoices', 'sales', 'logs');
 }
 
 try {
@@ -305,6 +343,9 @@ try {
             $price = (float)($data['precio'] ?? 0);
             $category = trim($data['categoria'] ?? 'General');
             if ($name === '' || $sku === '' || $price <= 0) response(['error' => 'Datos de producto invalidos.'], 400);
+            $duplicate = $pdo->prepare('SELECT COUNT(*) FROM PRODUCTO WHERE sku = ? OR LOWER(nombre) = LOWER(?)');
+            $duplicate->execute([$sku, $name]);
+            if ((int)$duplicate->fetchColumn() > 0) response(['error' => 'El producto ya existe'], 409);
             $pdo->beginTransaction();
             $stmt = $pdo->prepare('INSERT INTO PRODUCTO (nombre, sku, costo_base) VALUES (?, ?, ?)');
             $stmt->execute([$name, $sku, round($price * .60, 2)]);
@@ -316,6 +357,28 @@ try {
             logAction($pdo, 'Producto creado: ' . $sku);
             $pdo->commit();
             response(['success' => true, 'id' => $id]);
+
+        case 'update_product':
+            $data = input();
+            $id = (int)($data['id'] ?? 0);
+            $branch = (int)($data['sucursal'] ?? 1);
+            $name = trim($data['nombre'] ?? '');
+            $price = (float)($data['precio'] ?? 0);
+            $stock = (int)($data['stock'] ?? 0);
+            if ($id <= 0 || $name === '' || $price <= 0 || $stock < 0) response(['error' => 'Datos de producto invalidos.'], 400);
+            $duplicate = $pdo->prepare('SELECT COUNT(*) FROM PRODUCTO WHERE id_producto <> ? AND LOWER(nombre) = LOWER(?)');
+            $duplicate->execute([$id, $name]);
+            if ((int)$duplicate->fetchColumn() > 0) response(['error' => 'El producto ya existe'], 409);
+            $pdo->beginTransaction();
+            $pdo->prepare('UPDATE PRODUCTO SET nombre = ?, costo_base = ? WHERE id_producto = ?')->execute([$name, round($price * .60, 2), $id]);
+            foreach (['Linea' => $price, 'Fisica' => round($price * 1.05, 2), 'Corporativo' => round($price * .90, 2)] as $channel => $channelPrice) {
+                $pdo->prepare("UPDATE PRECIO_CANAL SET fecha_vigencia_fin = DATE_SUB(CURDATE(), INTERVAL 1 DAY) WHERE id_producto = ? AND canal = ? AND fecha_vigencia_fin IS NULL")->execute([$id, $channel]);
+                $pdo->prepare('INSERT INTO PRECIO_CANAL (id_producto, canal, precio_venta, fecha_vigencia_inicio) VALUES (?, ?, ?, CURDATE())')->execute([$id, $channel, $channelPrice]);
+            }
+            $pdo->prepare('INSERT INTO INVENTARIO (id_sucursal, id_producto, cantidad_disponible) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE cantidad_disponible = VALUES(cantidad_disponible)')->execute([$branch, $id, $stock]);
+            logAction($pdo, 'Producto actualizado: #' . $id);
+            $pdo->commit();
+            response(['success' => true]);
 
         case 'create_client':
             $data = input();
@@ -359,6 +422,7 @@ try {
             $permissions = $data['permisos'] ?? [];
             if ($roleId <= 0) response(['error' => 'Rol requerido.'], 400);
             $pdo->beginTransaction();
+            $pdo->prepare('DELETE FROM ROL_PERMISO WHERE id_rol = ?')->execute([$roleId]);
             foreach ($permissions as $permissionName) {
                 $permissionName = trim((string)$permissionName);
                 if ($permissionName === '') continue;
@@ -380,6 +444,17 @@ try {
             $pdo->prepare('UPDATE EMPLEADO SET activo = FALSE WHERE id_empleado = ?')->execute([$id]);
             logAction($pdo, 'Empleado desactivado: ' . $id);
             response(['success' => true]);
+
+        case 'toggle_employee':
+            $id = (int)(input()['id'] ?? 0);
+            $stmt = $pdo->prepare('SELECT activo FROM EMPLEADO WHERE id_empleado = ?');
+            $stmt->execute([$id]);
+            $active = $stmt->fetchColumn();
+            if ($active === false) response(['error' => 'Empleado no encontrado.'], 404);
+            $newState = (int)!((bool)$active);
+            $pdo->prepare('UPDATE EMPLEADO SET activo = ? WHERE id_empleado = ?')->execute([$newState, $id]);
+            logAction($pdo, ($newState ? 'Empleado activado: ' : 'Empleado desactivado: ') . $id);
+            response(['success' => true, 'activo' => $newState]);
 
         case 'adjust_stock':
             $data = input();

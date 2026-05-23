@@ -104,6 +104,12 @@ button.danger { background: var(--red); }
   background: rgba(255,255,255,.08);
   border-color: rgba(255,255,255,.12);
 }
+.nav-button.locked {
+  opacity: .55;
+}
+.nav-button.locked small {
+  color: #f6c46b;
+}
 
 .app {
   margin-left: 280px;
