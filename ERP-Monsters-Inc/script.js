@@ -38,6 +38,36 @@ const state = {
 const money = value => '$' + Number(value || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const esc = value => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;');
 
+function toast(msg, type = 'info', dur = 3500) {
+  let c = document.getElementById('toastContainer');
+  if (!c) { c = document.createElement('div'); c.id = 'toastContainer'; document.body.appendChild(c); }
+  const el = document.createElement('div');
+  const icons = { success: '✅', error: '❌', info: 'ℹ️', warn: '⚠️' };
+  el.className = `toast toast-${type}`;
+  el.innerHTML = `<span class="toast-icon">${icons[type] || 'ℹ️'}</span><span>${msg}</span>`;
+  c.appendChild(el);
+  setTimeout(() => { el.classList.add('toast-out'); setTimeout(() => el.remove(), 300); }, dur);
+}
+
+function setLoading(id, on) {
+  const b = document.getElementById(id);
+  if (b) { b.classList.toggle('loading', on); b.disabled = on; }
+}
+
+function autoFillInvoiceAmount() {
+  const clientId = Number(document.getElementById('invoiceClient')?.value || 0);
+  const uiCh = document.getElementById('invoiceChannel')?.value || 'Online';
+  const client = (state.data.clients || []).find(c => Number(c.id) === clientId);
+  const f = document.getElementById('invoiceAmount');
+  if (!f) return;
+  if (client) {
+    const key = uiCh === 'Online' ? 'total_linea' : uiCh === 'Punto Fisico' ? 'total_fisica' : 'total_corporativo';
+    const v = Number(client[key] || 0);
+    f.value = v > 0 ? Math.max(100, Math.round(v * 0.15)) : 1200;
+  } else { f.value = 1200; }
+  calculateInvoicePreview();
+}
+
 async function api(action, options = {}) {
   const response = await fetch(`api.php?action=${action}`, {
     headers: { 'Content-Type': 'application/json' },
@@ -120,7 +150,7 @@ function can(permission) {
 
 function guard(permission) {
   if (can(permission)) return true;
-  alert('Acceso Denegado');
+  toast('Acceso denegado: tu rol no tiene el permiso "' + permission + '".', 'error');
   return false;
 }
 
@@ -309,33 +339,40 @@ function addToCart() {
   const productId = Number(document.getElementById('posProduct').value);
   const quantity = Math.max(1, Number(document.getElementById('posQty').value || 1));
   const channel = 'Punto Fisico';
-  if (productStockForChannel(productId, channel) < quantity) return alert('Inventario insuficiente en Punto Fisico.');
+  if (productStockForChannel(productId, channel) < quantity) return toast('Stock insuficiente en Punto Físico para esa cantidad.', 'warn');
   const found = state.cart.find(item => item.id === productId);
   if (found) found.cantidad += quantity;
   else state.cart.push({ id: productId, cantidad: quantity });
   renderPOS();
 }
 
-async function processSale(uiChannelName, items = state.cart, clientId = Number(document.getElementById('posClient').value || 0)) {
+async function processSale(uiChannelName, items = state.cart, clientId = Number(document.getElementById('posClient')?.value || 0)) {
   if (!guard('Procesar ventas')) return;
-  if (!items.length) return alert('Agrega articulos.');
-  const data = await api('create_sale', {
-    method: 'POST',
-    body: JSON.stringify(actorPayload({ canal: dbChannel(uiChannelName), cliente: clientId, items }))
-  });
-  const ticket = buildTicket(data.venta_id, uiChannelName, items, data.total);
-  state.cart = [];
-  await loadData();
-  openDocument(`Ticket venta ${data.venta_id}`, ticket);
+  if (!items.length) return toast('Agrega artículos al ticket primero.', 'warn');
+  try {
+    const data = await api('create_sale', {
+      method: 'POST',
+      body: JSON.stringify(actorPayload({ canal: dbChannel(uiChannelName), cliente: clientId, items }))
+    });
+    const ticket = buildTicket(data.venta_id, uiChannelName, items, data.total);
+    state.cart = [];
+    await loadData();
+    toast(`Venta #${data.venta_id} procesada — ${uiChannelName}.`, 'success');
+    openDocument(`Ticket venta ${data.venta_id}`, ticket);
+  } catch(e) { toast(e.message, 'error'); }
 }
 
-async function simulateChannelSale(uiChannelName) {
+async function simulateChannelSale(uiChannelName, btnId) {
   if (!guard('Procesar ventas')) return;
-  const branchId = branchIdForChannel(uiChannelName);
-  const product = (state.data.inventory || []).find(row => Number(row.id_sucursal) === branchId && Number(row.stock) > 0);
-  if (!product) return alert(`No hay inventario para ${uiChannelName}.`);
-  const client = (state.data.clients || []).find(c => uiChannelName === 'Corporaciones' ? c.tipo === 'Corporativo' : true);
-  await processSale(uiChannelName, [{ id: Number(product.id), cantidad: uiChannelName === 'Corporaciones' ? 2 : 1 }], Number(client?.id || 0));
+  if (btnId) setLoading(btnId, true);
+  try {
+    const branchId = branchIdForChannel(uiChannelName);
+    const product = (state.data.inventory || []).find(row => Number(row.id_sucursal) === branchId && Number(row.stock) > 0);
+    if (!product) { toast(`Sin inventario disponible para ${uiChannelName}.`, 'warn'); return; }
+    const client = (state.data.clients || []).find(c => uiChannelName === 'Corporaciones' ? c.tipo === 'Corporativo' : true);
+    await processSale(uiChannelName, [{ id: Number(product.id), cantidad: uiChannelName === 'Corporaciones' ? 2 : 1 }], Number(client?.id || 0));
+  } catch(e) { toast(e.message, 'error'); }
+  finally { if (btnId) setLoading(btnId, false); }
 }
 
 function buildTicket(saleId, channel, items, total) {
@@ -351,31 +388,40 @@ function renderClients() {
   document.getElementById('clientRows').innerHTML = list.map(client => `<tr><td><strong>${esc(client.nombre)}</strong><br><small>${esc(client.correo)}</small></td><td>${esc(client.tipo)}</td><td><span class="badge">${esc(uiChannel(client.canal_gestion))}</span><br><small>Online ${money(client.total_linea)} / Fisico ${money(client.total_fisica)} / Corp ${money(client.total_corporativo)}</small></td><td>${esc(client.lugar_gestion || 'Sin asignar')}</td><td>${Number(client.total_linea || 0) + Number(client.total_fisica || 0) + Number(client.total_corporativo || 0) > 0 ? 1 : 0}</td><td>${money(Number(client.total_linea || 0) + Number(client.total_fisica || 0) + Number(client.total_corporativo || 0))}</td><td><button class="ghost" data-delete-client="${client.id}">Eliminar</button></td></tr>`).join('');
   document.querySelectorAll('[data-delete-client]').forEach(button => button.onclick = async () => {
     if (!guard('Gestionar clientes')) return;
-    if (!confirm('Eliminar cliente sin ventas?')) return;
+    if (!confirm('¿Eliminar este cliente? (Solo si no tiene ventas registradas)')) return;
     try {
       await api('delete_client', { method: 'POST', body: JSON.stringify(actorPayload({ id: Number(button.dataset.deleteClient) })) });
       await loadData();
-    } catch (error) {
-      alert(error.message);
-    }
+      toast('Cliente eliminado.', 'success');
+    } catch (error) { toast(error.message, 'error'); }
   });
 }
 
 async function createClient() {
   if (!guard('Gestionar clientes')) return;
-  await api('create_client', {
-    method: 'POST',
-    body: JSON.stringify(actorPayload({
-      nombre: document.getElementById('clientName').value,
-      correo: document.getElementById('clientEmail').value,
-      tipo: document.getElementById('clientType').value === 'Cliente Corporativo' ? 'persona_moral' : 'persona_fisica',
-      canal: dbChannel(document.getElementById('clientChannel').value),
-      sucursal: Number(document.getElementById('clientBranch').value || branchIdForChannel(document.getElementById('clientChannel').value)),
-      telefono: '',
-      direccion: 'Direccion registrada desde ERP'
-    }))
-  });
-  await loadData();
+  const nombre = document.getElementById('clientName').value.trim();
+  const correo = document.getElementById('clientEmail').value.trim();
+  if (!nombre) return toast('El nombre del cliente es obligatorio.', 'warn');
+  setLoading('createClient', true);
+  try {
+    await api('create_client', {
+      method: 'POST',
+      body: JSON.stringify(actorPayload({
+        nombre,
+        correo,
+        tipo: document.getElementById('clientType').value === 'Cliente Corporativo' ? 'persona_moral' : 'persona_fisica',
+        canal: dbChannel(document.getElementById('clientChannel').value),
+        sucursal: Number(document.getElementById('clientBranch').value || branchIdForChannel(document.getElementById('clientChannel').value)),
+        telefono: '',
+        direccion: 'Dirección registrada desde ERP'
+      }))
+    });
+    await loadData();
+    toast('Cliente registrado correctamente.', 'success');
+    document.getElementById('clientName').value = '';
+    document.getElementById('clientEmail').value = '';
+  } catch(e) { toast(e.message, 'error'); }
+  finally { setLoading('createClient', false); }
 }
 
 function renderInventory() {
@@ -397,20 +443,24 @@ async function createProduct() {
   if (!guard('Gestionar inventario')) return;
   const name = document.getElementById('productName').value.trim();
   const sku = document.getElementById('productSku').value.trim().toUpperCase();
-  const exists = (state.data.products || []).some(product => product.sku.toUpperCase() === sku || product.nombre.toLowerCase() === name.toLowerCase());
-  if (exists) return alert('El producto ya existe');
-  await api('create_product', {
-    method: 'POST',
-    body: JSON.stringify(actorPayload({
-      nombre: name,
-      sku,
-      categoria: document.getElementById('productCategory').value,
-      precio: Number(document.getElementById('productPrice').value || 0)
-    }))
-  });
-  const qty = Number(document.getElementById('productStock').value || 0);
-  if (qty > 0) await api('adjust_stock', { method: 'POST', body: JSON.stringify(actorPayload({ sucursal: 1, sku, cantidad: qty })) });
-  await loadData();
+  const precio = Number(document.getElementById('productPrice').value || 0);
+  if (!name || !sku) return toast('Nombre y SKU son obligatorios.', 'warn');
+  if (precio <= 0) return toast('El precio debe ser mayor a 0.', 'warn');
+  const exists = (state.data.products || []).some(p => p.sku.toUpperCase() === sku || p.nombre.toLowerCase() === name.toLowerCase());
+  if (exists) return toast('Ya existe un producto con ese SKU o nombre.', 'warn');
+  setLoading('createProduct', true);
+  try {
+    await api('create_product', {
+      method: 'POST',
+      body: JSON.stringify(actorPayload({ nombre: name, sku, categoria: document.getElementById('productCategory').value, precio }))
+    });
+    const qty = Number(document.getElementById('productStock').value || 0);
+    if (qty > 0) await api('adjust_stock', { method: 'POST', body: JSON.stringify(actorPayload({ sucursal: 1, sku, cantidad: qty })) });
+    await loadData();
+    toast(`Producto ${sku} registrado correctamente.`, 'success');
+    ['productName','productSku','productCategory','productPrice','productStock'].forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; });
+  } catch(e) { toast(e.message, 'error'); }
+  finally { setLoading('createProduct', false); }
 }
 
 function openProductEditor(productId, branchId) {
@@ -464,21 +514,28 @@ function calculateInvoicePreview() {
 
 async function issueInvoice() {
   if (!guard('Emitir CFDI')) return;
-  const data = await api('create_manual_invoice', {
-    method: 'POST',
-    body: JSON.stringify(actorPayload({
-      cliente: Number(document.getElementById('invoiceClient').value || 0),
-      canal: dbChannel(document.getElementById('invoiceChannel').value),
-      importe: Number(document.getElementById('invoiceAmount').value || 0)
-    }))
-  });
-  await loadData();
-  openDocument(`CFDI ${data.venta_id}`, `<p>CFDI emitido y registrado en FACTURA.</p><p>Total: ${money(data.total)}</p>`);
+  const importe = Number(document.getElementById('invoiceAmount').value || 0);
+  if (importe <= 0) return toast('El importe debe ser mayor a cero.', 'warn');
+  setLoading('issueInvoice', true);
+  try {
+    const data = await api('create_manual_invoice', {
+      method: 'POST',
+      body: JSON.stringify(actorPayload({
+        cliente: Number(document.getElementById('invoiceClient').value || 0),
+        canal: dbChannel(document.getElementById('invoiceChannel').value),
+        importe
+      }))
+    });
+    await loadData();
+    toast(`CFDI emitido — Venta #${data.venta_id} por ${money(data.total)}.`, 'success');
+    openDocument(`CFDI ${data.venta_id}`, `<p>CFDI emitido y registrado en FACTURA.</p><p>Total: ${money(data.total)}</p>`);
+  } catch(e) { toast(e.message, 'error'); }
+  finally { setLoading('issueInvoice', false); }
 }
 
 function downloadInvoice(invoiceId) {
   const invoice = (state.data.invoices || []).find(item => Number(item.id) === invoiceId);
-  if (!invoice) return alert('Factura no encontrada.');
+  if (!invoice) return toast('Factura no encontrada.', 'error');
   const folio = `FAC-${String(invoice.id).padStart(4, '0')}`;
   const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<cfdi folio="${folio}" cliente="${esc(invoice.cliente)}" rfc="${esc(invoice.rfc || 'XAXX010101000')}" canal="${esc(invoice.canal)}" total="${Number(invoice.total || 0).toFixed(2)}" uso_cfdi="${esc(invoice.uso_cfdi || 'G03')}"></cfdi>`;
   const pdf = `Monster Inc. Corporation\n${folio}\nCliente: ${invoice.cliente}\nRFC: ${invoice.rfc || 'XAXX010101000'}\nCanal: ${uiChannel(invoice.canal)}\nTotal: ${money(invoice.total)}\nCFDI simulado para entorno local.`;
@@ -514,17 +571,25 @@ function renderAccess() {
 
 async function createEmployee() {
   if (!guard('Gestionar accesos')) return;
-  await api('create_employee', {
-    method: 'POST',
-    body: JSON.stringify(actorPayload({
-      nombre: document.getElementById('employeeName').value,
-      correo: document.getElementById('employeeEmail').value,
-      password: 'Empleado123*',
-      rol: Number(document.getElementById('employeeRole').value || 0),
-      sucursal: Number(document.getElementById('employeeBranch').value || 1)
-    }))
-  });
-  await loadData();
+  const nombre = document.getElementById('employeeName').value.trim();
+  const correo = document.getElementById('employeeEmail').value.trim();
+  if (!nombre || !correo) return toast('Nombre y correo son obligatorios.', 'warn');
+  setLoading('createEmployee', true);
+  try {
+    await api('create_employee', {
+      method: 'POST',
+      body: JSON.stringify(actorPayload({
+        nombre, correo, password: 'Empleado123*',
+        rol: Number(document.getElementById('employeeRole').value || 0),
+        sucursal: Number(document.getElementById('employeeBranch').value || 1)
+      }))
+    });
+    await loadData();
+    toast(`Empleado ${nombre} registrado. Contraseña: Empleado123*`, 'success', 5000);
+    document.getElementById('employeeName').value = '';
+    document.getElementById('employeeEmail').value = '';
+  } catch(e) { toast(e.message, 'error'); }
+  finally { setLoading('createEmployee', false); }
 }
 
 function selectedCutSales() {
@@ -602,12 +667,12 @@ function wire() {
   document.getElementById('loginForm').onsubmit = login;
   document.getElementById('logoutButton').onclick = clearSession;
   document.getElementById('addToCart').onclick = addToCart;
-  document.getElementById('clearCart').onclick = () => { state.cart = []; renderPOS(); };
+  document.getElementById('clearCart').onclick = () => { state.cart = []; renderPOS(); toast('Ticket vaciado.','info'); };
   document.getElementById('processPosSale').onclick = () => processSale('Punto Fisico');
-  document.getElementById('runOnlineOrder').onclick = () => simulateChannelSale('Online');
-  document.getElementById('runCorporateOrder').onclick = () => simulateChannelSale('Corporaciones');
-  document.getElementById('simulateOnline').onclick = () => simulateChannelSale('Online');
-  document.getElementById('simulateCorporate').onclick = () => simulateChannelSale('Corporaciones');
+  document.getElementById('runOnlineOrder').onclick = () => simulateChannelSale('Online','runOnlineOrder');
+  document.getElementById('runCorporateOrder').onclick = () => simulateChannelSale('Corporaciones','runCorporateOrder');
+  document.getElementById('simulateOnline').onclick = () => simulateChannelSale('Online','simulateOnline');
+  document.getElementById('simulateCorporate').onclick = () => simulateChannelSale('Corporaciones','simulateCorporate');
   document.getElementById('createClient').onclick = createClient;
   document.getElementById('createProduct').onclick = createProduct;
   document.getElementById('createEmployee').onclick = createEmployee;
@@ -633,17 +698,22 @@ function wire() {
   document.getElementById('printModal').onclick = () => window.print();
   document.getElementById('downloadModal').onclick = () => download('documento-monsterinc.html', document.getElementById('modalBody').innerHTML, 'text/html;charset=utf-8');
   document.querySelectorAll('[data-export]').forEach(button => button.onclick = () => exportAll());
-  document.getElementById('resetState').onclick = async () => { await loadData(); openDocument('Datos recargados', '<p>El ERP volvio a leer el estado global desde sistema_ventas.</p>'); };
+  document.getElementById('resetState').onclick = async () => { setLoading('resetState',true); await loadData(); setLoading('resetState',false); toast('Datos sincronizados con la base de datos.','success'); };
   document.getElementById('saveRoleChanges').onclick = saveRolePermissions;
   document.getElementById('createRole').onclick = createRole;
   document.getElementById('roleEditor').onchange = renderPermissionChecklist;
   document.getElementById('currentRole').onchange = () => render();
+  document.getElementById('invoiceClient').onchange = autoFillInvoiceAmount;
+  document.getElementById('invoiceChannel').onchange = autoFillInvoiceAmount;
 }
 
 async function login(event) {
   event.preventDefault();
   const message = document.getElementById('loginMessage');
+  const btn = event.target.querySelector('button[type=submit]');
   message.textContent = 'Validando credenciales...';
+  message.className = '';
+  if (btn) btn.classList.add('loading');
   try {
     const data = await api('login', {
       method: 'POST',
@@ -661,15 +731,19 @@ async function login(event) {
       sucursal: data.empleado.sucursal
     });
     await loadData();
+    toast(`Bienvenido, ${data.empleado.nombre} (${data.empleado.rol}).`, 'success');
   } catch (error) {
     message.textContent = error.message;
+    message.className = 'err';
+  } finally {
+    if (btn) btn.classList.remove('loading');
   }
 }
 
 async function createRole() {
   if (!guard('Gestionar accesos')) return;
   const name = document.getElementById('newRoleName').value.trim();
-  if (!name) return alert('Captura el nombre del rol.');
+  if (!name) return toast('Escribe el nombre del nuevo rol.', 'warn');
   const checked = [...document.querySelectorAll('#permissionChecklist input:checked')].map(input => input.value);
   const created = await api('create_role', { method: 'POST', body: JSON.stringify(actorPayload({ nombre: name })) });
   state.rolePermissions[created.id] = checked.length ? checked : ['Ver tablero'];
@@ -680,11 +754,16 @@ async function createRole() {
 async function saveRolePermissions() {
   if (!guard('Gestionar accesos')) return;
   const roleId = Number(document.getElementById('roleEditor').value || 0);
+  if (!roleId) return toast('Selecciona un rol primero.', 'warn');
   const permissions = [...document.querySelectorAll('#permissionChecklist input:checked')].map(input => input.value);
-  state.rolePermissions[roleId] = permissions;
-  await api('save_role_permissions', { method: 'POST', body: JSON.stringify(actorPayload({ rol: roleId, permisos: permissions })) });
-  await loadData();
-  openDocument('Permisos guardados', '<p>Permisos registrados en PERMISO y ROL_PERMISO. El selector de rol aplica la simulacion de privilegios en la interfaz.</p>');
+  setLoading('saveRoleChanges', true);
+  try {
+    state.rolePermissions[roleId] = permissions;
+    await api('save_role_permissions', { method: 'POST', body: JSON.stringify(actorPayload({ rol: roleId, permisos: permissions })) });
+    await loadData();
+    toast('Permisos guardados correctamente.', 'success');
+  } catch(e) { toast(e.message, 'error'); }
+  finally { setLoading('saveRoleChanges', false); }
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
