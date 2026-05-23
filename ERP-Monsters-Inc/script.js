@@ -124,6 +124,10 @@ function guard(permission) {
   return false;
 }
 
+function actorPayload(extra = {}) {
+  return { empleado: state.session?.id || 1, ...extra };
+}
+
 function branchIdForChannel(channel) {
   if (channel === 'Corporaciones') return 3;
   if (channel === 'Punto Fisico') return 2;
@@ -250,15 +254,12 @@ function renderDashboard() {
     return { label, value: Number(found?.total || 0) };
   }), ['#2364aa', '#078b63', '#7357c8']);
 
-  drawBars('clientChart', CHANNELS.map(label => {
-    const db = dbChannel(label);
-    return {
-      label,
-      value: (state.data.clients || []).filter(client => label === 'Corporaciones' ? client.tipo === 'Corporativo' : Number(client[`total_${db.toLowerCase()}`] || 0) > 0).length
-    };
-  }), ['#2364aa', '#078b63', '#7357c8']);
+  drawBars('clientChart', CHANNELS.map(label => ({
+    label,
+    value: (state.data.clients || []).filter(client => client.canal_gestion === dbChannel(label)).length
+  })), ['#2364aa', '#078b63', '#7357c8']);
 
-  drawBars('branchChart', (state.data.salesByRegion || []).map(row => ({ label: row.region, value: Number(row.total || 0) })), ['#1d4ed8', '#0f766e', '#b45309']);
+  drawBars('branchChart', (state.data.clientsByLocation || []).map(row => ({ label: row.lugar, value: Number(row.clientes || 0) })), ['#1d4ed8', '#0f766e', '#b45309']);
   document.getElementById('recentLogRows').innerHTML = (state.data.logs || []).slice(0, 6).map(log => `<tr><td>${esc(log.fecha)}</td><td>${esc(log.empleado)}</td><td><span class="badge">BD</span></td><td>${esc(log.accion)}</td></tr>`).join('');
 }
 
@@ -320,7 +321,7 @@ async function processSale(uiChannelName, items = state.cart, clientId = Number(
   if (!items.length) return alert('Agrega articulos.');
   const data = await api('create_sale', {
     method: 'POST',
-    body: JSON.stringify({ canal: dbChannel(uiChannelName), cliente: clientId, items })
+    body: JSON.stringify(actorPayload({ canal: dbChannel(uiChannelName), cliente: clientId, items }))
   });
   const ticket = buildTicket(data.venta_id, uiChannelName, items, data.total);
   state.cart = [];
@@ -347,12 +348,12 @@ function buildTicket(saleId, channel, items, total) {
 
 function renderClients() {
   const list = state.clientFilter === 'all' ? state.data.clients || [] : (state.data.clients || []).filter(client => client.tipo === state.clientFilter);
-  document.getElementById('clientRows').innerHTML = list.map(client => `<tr><td><strong>${esc(client.nombre)}</strong><br><small>${esc(client.correo)}</small></td><td>${esc(client.tipo)}</td><td><span class="badge">Online ${money(client.total_linea)} / Fisico ${money(client.total_fisica)} / Corp ${money(client.total_corporativo)}</span></td><td>BD central</td><td>${Number(client.total_linea || 0) + Number(client.total_fisica || 0) + Number(client.total_corporativo || 0) > 0 ? 1 : 0}</td><td>${money(Number(client.total_linea || 0) + Number(client.total_fisica || 0) + Number(client.total_corporativo || 0))}</td><td><button class="ghost" data-delete-client="${client.id}">Eliminar</button></td></tr>`).join('');
+  document.getElementById('clientRows').innerHTML = list.map(client => `<tr><td><strong>${esc(client.nombre)}</strong><br><small>${esc(client.correo)}</small></td><td>${esc(client.tipo)}</td><td><span class="badge">${esc(uiChannel(client.canal_gestion))}</span><br><small>Online ${money(client.total_linea)} / Fisico ${money(client.total_fisica)} / Corp ${money(client.total_corporativo)}</small></td><td>${esc(client.lugar_gestion || 'Sin asignar')}</td><td>${Number(client.total_linea || 0) + Number(client.total_fisica || 0) + Number(client.total_corporativo || 0) > 0 ? 1 : 0}</td><td>${money(Number(client.total_linea || 0) + Number(client.total_fisica || 0) + Number(client.total_corporativo || 0))}</td><td><button class="ghost" data-delete-client="${client.id}">Eliminar</button></td></tr>`).join('');
   document.querySelectorAll('[data-delete-client]').forEach(button => button.onclick = async () => {
     if (!guard('Gestionar clientes')) return;
     if (!confirm('Eliminar cliente sin ventas?')) return;
     try {
-      await api('delete_client', { method: 'POST', body: JSON.stringify({ id: Number(button.dataset.deleteClient) }) });
+      await api('delete_client', { method: 'POST', body: JSON.stringify(actorPayload({ id: Number(button.dataset.deleteClient) })) });
       await loadData();
     } catch (error) {
       alert(error.message);
@@ -364,13 +365,15 @@ async function createClient() {
   if (!guard('Gestionar clientes')) return;
   await api('create_client', {
     method: 'POST',
-    body: JSON.stringify({
+    body: JSON.stringify(actorPayload({
       nombre: document.getElementById('clientName').value,
       correo: document.getElementById('clientEmail').value,
       tipo: document.getElementById('clientType').value === 'Cliente Corporativo' ? 'persona_moral' : 'persona_fisica',
+      canal: dbChannel(document.getElementById('clientChannel').value),
+      sucursal: Number(document.getElementById('clientBranch').value || branchIdForChannel(document.getElementById('clientChannel').value)),
       telefono: '',
       direccion: 'Direccion registrada desde ERP'
-    })
+    }))
   });
   await loadData();
 }
@@ -398,15 +401,15 @@ async function createProduct() {
   if (exists) return alert('El producto ya existe');
   await api('create_product', {
     method: 'POST',
-    body: JSON.stringify({
+    body: JSON.stringify(actorPayload({
       nombre: name,
       sku,
       categoria: document.getElementById('productCategory').value,
       precio: Number(document.getElementById('productPrice').value || 0)
-    })
+    }))
   });
   const qty = Number(document.getElementById('productStock').value || 0);
-  if (qty > 0) await api('adjust_stock', { method: 'POST', body: JSON.stringify({ sucursal: 1, sku, cantidad: qty }) });
+  if (qty > 0) await api('adjust_stock', { method: 'POST', body: JSON.stringify(actorPayload({ sucursal: 1, sku, cantidad: qty })) });
   await loadData();
 }
 
@@ -425,13 +428,13 @@ function openProductEditor(productId, branchId) {
   document.getElementById('saveProductEdit').onclick = async () => {
     await api('update_product', {
       method: 'POST',
-      body: JSON.stringify({
+      body: JSON.stringify(actorPayload({
         id: productId,
         sucursal: branchId,
         nombre: document.getElementById('editProductName').value,
         precio: Number(document.getElementById('editProductPrice').value || 0),
         stock: Number(document.getElementById('editProductStock').value || 0)
-      })
+      }))
     });
     document.getElementById('modal').classList.remove('open');
     await loadData();
@@ -463,11 +466,11 @@ async function issueInvoice() {
   if (!guard('Emitir CFDI')) return;
   const data = await api('create_manual_invoice', {
     method: 'POST',
-    body: JSON.stringify({
+    body: JSON.stringify(actorPayload({
       cliente: Number(document.getElementById('invoiceClient').value || 0),
       canal: dbChannel(document.getElementById('invoiceChannel').value),
       importe: Number(document.getElementById('invoiceAmount').value || 0)
-    })
+    }))
   });
   await loadData();
   openDocument(`CFDI ${data.venta_id}`, `<p>CFDI emitido y registrado en FACTURA.</p><p>Total: ${money(data.total)}</p>`);
@@ -485,13 +488,13 @@ function downloadInvoice(invoiceId) {
 }
 
 function renderShipping() {
-  document.getElementById('shipmentRows').innerHTML = (state.data.shipments || []).map(shipment => `<tr><td>${esc(shipment.numero_guia || `ENV-${shipment.id}`)}</td><td><span class="badge">Online/Corp</span></td><td>Venta ${shipment.id_venta}</td><td>BD central</td><td>${esc(shipment.direccion)}</td><td><select data-shipment="${shipment.id}"><option ${shipment.estado === 'Preparando' ? 'selected' : ''}>Preparando</option><option ${shipment.estado === 'En camino' ? 'selected' : ''}>En camino</option><option ${shipment.estado === 'Entregado' ? 'selected' : ''}>Entregado</option><option ${shipment.estado === 'Fallido' ? 'selected' : ''}>Fallido</option></select></td><td><button class="ghost" data-view-shipment="${shipment.id}">Ver</button></td></tr>`).join('');
+  document.getElementById('shipmentRows').innerHTML = (state.data.shipments || []).map(shipment => `<tr><td>${esc(shipment.numero_guia || `ENV-${shipment.id}`)}</td><td><span class="badge">Online/Corp</span></td><td>Venta ${shipment.id_venta}</td><td>BD central</td><td>${esc(shipment.direccion)}</td><td><select data-shipment="${shipment.id}"><option ${shipment.estado === 'Pendiente' ? 'selected' : ''}>Pendiente</option><option ${shipment.estado === 'En Ruta' ? 'selected' : ''}>En Ruta</option><option ${shipment.estado === 'Entregado' ? 'selected' : ''}>Entregado</option><option ${shipment.estado === 'Fallido' ? 'selected' : ''}>Fallido</option></select></td><td><button class="ghost" data-view-shipment="${shipment.id}">Ver</button></td></tr>`).join('');
   document.querySelectorAll('[data-shipment]').forEach(select => select.onchange = async () => {
     if (!guard('Gestionar envios')) {
       await loadData();
       return;
     }
-    await api('update_shipment', { method: 'POST', body: JSON.stringify({ id: Number(select.dataset.shipment), estado: select.value }) });
+    await api('update_shipment', { method: 'POST', body: JSON.stringify(actorPayload({ id: Number(select.dataset.shipment), estado: select.value })) });
     await loadData();
   });
   document.querySelectorAll('[data-view-shipment]').forEach(button => button.onclick = () => openDocument(`Envio ${button.dataset.viewShipment}`, '<p>Envio/recoleccion conectado a ENVIO y ESTADO_ENVIO.</p>'));
@@ -504,7 +507,7 @@ function renderAccess() {
   }).join('');
   document.querySelectorAll('[data-employee]').forEach(button => button.onclick = async () => {
     if (!guard('Gestionar accesos')) return;
-    await api('toggle_employee', { method: 'POST', body: JSON.stringify({ id: Number(button.dataset.employee) }) });
+    await api('toggle_employee', { method: 'POST', body: JSON.stringify(actorPayload({ id: Number(button.dataset.employee) })) });
     await loadData();
   });
 }
@@ -513,13 +516,13 @@ async function createEmployee() {
   if (!guard('Gestionar accesos')) return;
   await api('create_employee', {
     method: 'POST',
-    body: JSON.stringify({
+    body: JSON.stringify(actorPayload({
       nombre: document.getElementById('employeeName').value,
       correo: document.getElementById('employeeEmail').value,
       password: 'Empleado123*',
       rol: Number(document.getElementById('employeeRole').value || 0),
       sucursal: Number(document.getElementById('employeeBranch').value || 1)
-    })
+    }))
   });
   await loadData();
 }
@@ -668,9 +671,9 @@ async function createRole() {
   const name = document.getElementById('newRoleName').value.trim();
   if (!name) return alert('Captura el nombre del rol.');
   const checked = [...document.querySelectorAll('#permissionChecklist input:checked')].map(input => input.value);
-  const created = await api('create_role', { method: 'POST', body: JSON.stringify({ nombre: name }) });
+  const created = await api('create_role', { method: 'POST', body: JSON.stringify(actorPayload({ nombre: name })) });
   state.rolePermissions[created.id] = checked.length ? checked : ['Ver tablero'];
-  await api('save_role_permissions', { method: 'POST', body: JSON.stringify({ rol: created.id, permisos: state.rolePermissions[created.id] }) });
+  await api('save_role_permissions', { method: 'POST', body: JSON.stringify(actorPayload({ rol: created.id, permisos: state.rolePermissions[created.id] })) });
   await loadData();
 }
 
@@ -679,7 +682,7 @@ async function saveRolePermissions() {
   const roleId = Number(document.getElementById('roleEditor').value || 0);
   const permissions = [...document.querySelectorAll('#permissionChecklist input:checked')].map(input => input.value);
   state.rolePermissions[roleId] = permissions;
-  await api('save_role_permissions', { method: 'POST', body: JSON.stringify({ rol: roleId, permisos: permissions }) });
+  await api('save_role_permissions', { method: 'POST', body: JSON.stringify(actorPayload({ rol: roleId, permisos: permissions })) });
   await loadData();
   openDocument('Permisos guardados', '<p>Permisos registrados en PERMISO y ROL_PERMISO. El selector de rol aplica la simulacion de privilegios en la interfaz.</p>');
 }
