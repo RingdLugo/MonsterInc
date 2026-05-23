@@ -12,24 +12,24 @@
       <div class="brand-mark">MI</div>
       <div>
         <strong>Monsters Inc. ERP</strong>
-        <span>Energia, gritos y risas</span>
+        <span>Ventas, inventario y operaciones</span>
       </div>
     </div>
     <label class="role-picker">Rol actual
       <select id="currentRole"></select>
     </label>
     <nav id="navigation"></nav>
-    <button class="ghost full" id="resetState">Reiniciar simulacion</button>
+    <button class="ghost full" id="resetState">Recargar datos de BD</button>
   </aside>
 
   <main class="app">
     <header class="topbar">
       <div>
-        <p class="eyebrow">Planta central Monstropolis</p>
+        <p class="eyebrow">Operacion central Monster Inc.</p>
         <h1 id="screenTitle">Tablero operativo</h1>
       </div>
       <div class="top-actions">
-        <button id="simulateOnline">Recoleccion online</button>
+        <button id="simulateOnline">Pedido online</button>
         <button id="simulateCorporate">Contrato corporativo</button>
         <button id="exportAll">Exportar Excel</button>
       </div>
@@ -40,7 +40,7 @@
       <div class="grid two">
         <article class="panel">
           <div class="panel-head">
-            <h2>Energia por canal</h2>
+          <h2>Ventas por canal</h2>
             <button class="ghost" data-export="sales">CSV</button>
           </div>
           <canvas id="channelChart" height="220"></canvas>
@@ -80,12 +80,12 @@
       <div class="grid pos-layout">
         <article class="panel">
           <div class="panel-head">
-            <h2>Despacho de energia</h2>
+          <h2>Punto de venta</h2>
             <span class="pill">Punto Fisico</span>
           </div>
           <div class="form-grid">
             <label>Cliente<select id="posClient"></select></label>
-            <label>Tanque / servicio<select id="posProduct"></select></label>
+            <label>Articulo<select id="posProduct"></select></label>
             <label>Cantidad<input id="posQty" type="number" min="1" value="1"></label>
           </div>
           <div class="actions">
@@ -108,8 +108,8 @@
             <h2>Simuladores por canal</h2>
             <span class="pill blue">Estado global</span>
           </div>
-          <p class="muted">Cada simulacion descuenta inventario, crea factura, actualiza graficas, registra bitacora y, si aplica, genera envio.</p>
-          <button class="full" id="runOnlineOrder">Pedido online de recarga</button>
+          <p class="muted">Cada venta descuenta inventario, crea factura, actualiza graficas, registra bitacora y, si aplica, genera envio o recoleccion.</p>
+          <button class="full" id="runOnlineOrder">Pedido online</button>
           <button class="full secondary" id="runCorporateOrder">Venta B2B corporativa</button>
           <div class="document-mini" id="lastOperation"></div>
         </article>
@@ -147,7 +147,7 @@
     <section class="screen" id="inventory">
       <article class="panel">
         <div class="panel-head">
-          <h2>Inventario de tanques</h2>
+          <h2>Inventario por sucursal</h2>
           <button id="exportInventory">Exportar inventario</button>
         </div>
         <div class="stock-filters">
@@ -157,9 +157,9 @@
           <button data-stock-filter="available">Disponibles</button>
         </div>
         <div class="form-grid five">
-          <label>Nombre<input id="productName" placeholder="Tanque de risas XL"></label>
+          <label>Nombre<input id="productName" placeholder="Laptop Lenovo ThinkPad E16"></label>
           <label>SKU<input id="productSku" placeholder="MI-ENER-900"></label>
-          <label>Categoria<input id="productCategory" placeholder="Energia de risas"></label>
+          <label>Categoria<input id="productCategory" placeholder="Computo"></label>
           <label>Precio<input id="productPrice" type="number" min="1" placeholder="2500"></label>
           <label>Stock<input id="productStock" type="number" min="0" placeholder="20"></label>
         </div>
@@ -177,13 +177,13 @@
       <div class="grid two">
         <article class="panel">
           <div class="panel-head">
-            <h2>Generar CFDI fiscal de energia</h2>
+            <h2>Generar CFDI fiscal</h2>
             <span class="pill green">IVA 16%</span>
           </div>
           <div class="form-grid">
             <label>Cliente<select id="invoiceClient"></select></label>
             <label>Canal<select id="invoiceChannel"><option>Online</option><option>Punto Físico</option><option>Corporaciones</option></select></label>
-            <label>Concepto<input id="invoiceConcept" placeholder="Suministro de energia de risas"></label>
+            <label>Concepto<input id="invoiceConcept" placeholder="Venta de articulos comerciales"></label>
             <label>Importe<input id="invoiceAmount" type="number" min="1" value="1200"></label>
           </div>
           <div class="invoice-preview">
@@ -231,7 +231,7 @@
       <div class="grid two">
         <article class="panel">
           <div class="panel-head">
-            <h2>Empleados / Asustadores</h2>
+          <h2>Empleados</h2>
             <button id="exportEmployees">Exportar empleados</button>
           </div>
           <div class="form-grid">

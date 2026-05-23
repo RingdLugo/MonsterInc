@@ -32,11 +32,11 @@ function ensureBaseData(PDO $pdo): void
     $pdo->exec("INSERT IGNORE INTO ESTADO_ENVIO (id_estado_envio, nombre) VALUES (1, 'Preparando'), (2, 'En camino'), (3, 'Entregado')");
 
     $products = [
-        ['Puerta estandar de sustos', 'PRD-001', 900.00, 'Puertas', 1500.00, 20],
-        ['Puerta premium peluda', 'PRD-002', 1800.00, 'Puertas', 3200.00, 12],
-        ['Contenedor de gritos', 'PRD-003', 650.00, 'Energia', 1100.00, 30],
-        ['Kit de seguridad CDA', 'PRD-004', 450.00, 'Seguridad', 850.00, 25],
-        ['Monitor de energia de risas', 'PRD-005', 1200.00, 'Energia', 2100.00, 15],
+        ['Laptop Lenovo ThinkPad E16', 'PRD-001', 12500.00, 'Computo', 18999.00, 20],
+        ['Monitor Samsung 27 pulgadas FHD', 'PRD-002', 2300.00, 'Electronica', 3999.00, 12],
+        ['Impresora HP LaserJet Pro M404dn', 'PRD-003', 3100.00, 'Oficina', 5299.00, 30],
+        ['Silla ergonomica Herman Miller Sayl', 'PRD-004', 8700.00, 'Mobiliario', 13200.00, 25],
+        ['Cafetera Nespresso Vertuo Pop', 'PRD-005', 1450.00, 'Electrodomesticos', 2499.00, 15],
     ];
 
     $findProductStmt = $pdo->prepare('SELECT id_producto FROM PRODUCTO WHERE sku = ? LIMIT 1');
@@ -56,6 +56,7 @@ function ensureBaseData(PDO $pdo): void
             $productId = (int)$pdo->lastInsertId();
         } else {
             $productId = (int)$productId;
+            $pdo->prepare('UPDATE PRODUCTO SET nombre = ?, costo_base = ? WHERE id_producto = ?')->execute([$name, $cost, $productId]);
         }
 
         $categoryExistsStmt->execute([$productId]);
@@ -67,11 +68,40 @@ function ensureBaseData(PDO $pdo): void
             $priceExistsStmt->execute([$productId, $channel]);
             if ((int)$priceExistsStmt->fetchColumn() === 0) {
                 $priceStmt->execute([$productId, $channel, $price]);
+            } else {
+                $pdo->prepare('UPDATE PRECIO_CANAL SET precio_venta = ? WHERE id_producto = ? AND canal = ? AND fecha_vigencia_fin IS NULL')->execute([$price, $productId, $channel]);
             }
         }
 
         $stockStmt->execute([$productId, $stock]);
     }
+}
+
+function firstAddressForClient(PDO $pdo, int $clientId): int
+{
+    $stmt = $pdo->prepare('SELECT id_direccion FROM DIRECCION_CLIENTE WHERE id_cliente = ? ORDER BY id_direccion ASC LIMIT 1');
+    $stmt->execute([$clientId]);
+    $addressId = $stmt->fetchColumn();
+    if ($addressId !== false) {
+        return (int)$addressId;
+    }
+
+    $stmt = $pdo->prepare('INSERT INTO DIRECCION_CLIENTE (id_cliente, direccion, ciudad, estado, codigo_postal) VALUES (?, ?, ?, ?, ?)');
+    $stmt->execute([$clientId, 'Direccion online pendiente de confirmar', 'Monterrey', 'Nuevo Leon', '64000']);
+    return (int)$pdo->lastInsertId();
+}
+
+function registerOnlineAfterSale(PDO $pdo, int $saleId, int $clientId): void
+{
+    $pdo->prepare('INSERT INTO FACTURA (id_venta, uso_cfdi, sello_digital) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE uso_cfdi = VALUES(uso_cfdi)')
+        ->execute([$saleId, 'G01', 'SEAL-ONLINE-' . $saleId]);
+
+    $addressId = firstAddressForClient($pdo, $clientId);
+    $pdo->prepare('INSERT INTO ENVIO (id_venta, id_direccion, id_estado_envio, fecha_estimada_entrega, numero_guia) VALUES (?, ?, 1, DATE_ADD(CURDATE(), INTERVAL 3 DAY), ?) ON DUPLICATE KEY UPDATE numero_guia = VALUES(numero_guia)')
+        ->execute([$saleId, $addressId, 'GUA-WEB-' . str_pad((string)$saleId, 6, '0', STR_PAD_LEFT)]);
+
+    $employeeId = (int)($pdo->query('SELECT id_empleado FROM EMPLEADO ORDER BY id_empleado ASC LIMIT 1')->fetchColumn() ?: 1);
+    $pdo->prepare('INSERT INTO BITACORA (id_empleado, accion) VALUES (?, ?)')->execute([$employeeId, 'Pedido Online registrado: venta #' . $saleId]);
 }
 
 function normalizeSaleStatus(string $status): string
@@ -243,6 +273,8 @@ try {
                 $detailStmt->execute([$saleId, $productId, $quantity, $price]);
                 $stockStmt->execute([$quantity, $productId]);
             }
+
+            registerOnlineAfterSale($pdo, $saleId, $clientId);
 
             $pdo->commit();
 

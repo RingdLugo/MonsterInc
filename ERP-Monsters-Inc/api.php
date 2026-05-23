@@ -58,8 +58,8 @@ function ensureCatalogs(PDO $pdo): void
 {
     $pdo->exec("INSERT IGNORE INTO REGION (id_region, nombre_region) VALUES (1, 'Centro'), (2, 'Norte'), (3, 'Corporativo')");
     $pdo->exec("INSERT IGNORE INTO SUCURSAL (id_sucursal, nombre, id_region, direccion, es_centro_distribucion) VALUES
-        (1, 'Susto Matriz', 1, 'Plataforma en linea Monster Inc.', TRUE),
-        (2, 'Susto Norte', 2, 'Sucursal fisica norte', FALSE),
+        (1, 'Centro de Distribucion Online', 1, 'Almacen web Monster Inc.', TRUE),
+        (2, 'Sucursal Norte', 2, 'Punto de venta fisico norte', FALSE),
         (3, 'Atencion Corporativa', 3, 'Oficina de clientes corporativos', FALSE)");
     $pdo->exec("INSERT IGNORE INTO ESTADO_ENVIO (id_estado_envio, nombre) VALUES (1, 'Preparando'), (2, 'En camino'), (3, 'Entregado'), (4, 'Fallido')");
 
@@ -76,11 +76,11 @@ function ensureCatalogs(PDO $pdo): void
     ensureEmployee($pdo, 'Henry Waternoose', 'contador@monsters.com', 'Contador123*', $accountant, null, 1);
 
     $products = [
-        ['Puerta estandar de sustos', 'PRD-001', 900.00, 'Puertas', 1500.00],
-        ['Puerta premium peluda', 'PRD-002', 1800.00, 'Puertas', 3200.00],
-        ['Contenedor de gritos', 'PRD-003', 650.00, 'Energia', 1100.00],
-        ['Kit de seguridad CDA', 'PRD-004', 450.00, 'Seguridad', 850.00],
-        ['Monitor de energia de risas', 'PRD-005', 1200.00, 'Energia', 2100.00],
+        ['Laptop Lenovo ThinkPad E16', 'PRD-001', 12500.00, 'Computo', 18999.00],
+        ['Monitor Samsung 27 pulgadas FHD', 'PRD-002', 2300.00, 'Electronica', 3999.00],
+        ['Impresora HP LaserJet Pro M404dn', 'PRD-003', 3100.00, 'Oficina', 5299.00],
+        ['Silla ergonomica Herman Miller Sayl', 'PRD-004', 8700.00, 'Mobiliario', 13200.00],
+        ['Cafetera Nespresso Vertuo Pop', 'PRD-005', 1450.00, 'Electrodomesticos', 2499.00],
     ];
 
     $find = $pdo->prepare('SELECT id_producto FROM PRODUCTO WHERE sku = ? LIMIT 1');
@@ -99,6 +99,7 @@ function ensureCatalogs(PDO $pdo): void
             $id = (int)$pdo->lastInsertId();
         } else {
             $id = (int)$id;
+            $pdo->prepare('UPDATE PRODUCTO SET nombre = ?, costo_base = ? WHERE id_producto = ?')->execute([$name, $cost, $id]);
         }
 
         $categoryExists->execute([$id]);
@@ -106,7 +107,11 @@ function ensureCatalogs(PDO $pdo): void
 
         foreach (['Linea' => $linePrice, 'Fisica' => round($linePrice * 1.05, 2), 'Corporativo' => round($linePrice * 0.90, 2)] as $channel => $price) {
             $priceExists->execute([$id, $channel]);
-            if ((int)$priceExists->fetchColumn() === 0) $insertPrice->execute([$id, $channel, $price]);
+            if ((int)$priceExists->fetchColumn() === 0) {
+                $insertPrice->execute([$id, $channel, $price]);
+            } else {
+                $pdo->prepare('UPDATE PRECIO_CANAL SET precio_venta = ? WHERE id_producto = ? AND canal = ? AND fecha_vigencia_fin IS NULL')->execute([$price, $id, $channel]);
+            }
         }
 
         $insertStock->execute([1, $id, 20]);
@@ -188,6 +193,31 @@ function getOrCreateClient(PDO $pdo, ?int $id = null): int
     return (int)$pdo->lastInsertId();
 }
 
+function firstAddressForClient(PDO $pdo, int $clientId): int
+{
+    $stmt = $pdo->prepare('SELECT id_direccion FROM DIRECCION_CLIENTE WHERE id_cliente = ? ORDER BY id_direccion ASC LIMIT 1');
+    $stmt->execute([$clientId]);
+    $addressId = $stmt->fetchColumn();
+    if ($addressId !== false) return (int)$addressId;
+
+    $stmt = $pdo->prepare('INSERT INTO DIRECCION_CLIENTE (id_cliente, direccion, ciudad, estado, codigo_postal) VALUES (?, ?, ?, ?, ?)');
+    $stmt->execute([$clientId, 'Direccion pendiente de confirmar', 'Monterrey', 'Nuevo Leon', '64000']);
+    return (int)$pdo->lastInsertId();
+}
+
+function invoiceAndShippingForSale(PDO $pdo, int $saleId, int $clientId, string $channel): void
+{
+    $stmt = $pdo->prepare('INSERT INTO FACTURA (id_venta, uso_cfdi, sello_digital) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE uso_cfdi = VALUES(uso_cfdi)');
+    $stmt->execute([$saleId, $channel === 'Corporativo' ? 'G03' : 'G01', 'SEAL-MONSTER-' . $saleId]);
+
+    if ($channel === 'Linea' || $channel === 'Corporativo') {
+        $addressId = firstAddressForClient($pdo, $clientId);
+        $guide = 'GUA-MI-' . str_pad((string)$saleId, 6, '0', STR_PAD_LEFT);
+        $stmt = $pdo->prepare('INSERT INTO ENVIO (id_venta, id_direccion, id_estado_envio, fecha_estimada_entrega, numero_guia) VALUES (?, ?, 1, DATE_ADD(CURDATE(), INTERVAL 3 DAY), ?) ON DUPLICATE KEY UPDATE numero_guia = VALUES(numero_guia)');
+        $stmt->execute([$saleId, $addressId, $guide]);
+    }
+}
+
 function dashboardData(PDO $pdo): array
 {
     $products = $pdo->query("SELECT p.id_producto AS id, p.nombre, p.sku, COALESCE(pc.precio_venta, p.costo_base) AS precio, COALESCE(cp.categoria, 'General') AS categoria, COALESCE(SUM(i.cantidad_disponible), 0) AS stock
@@ -235,7 +265,7 @@ function dashboardData(PDO $pdo): array
         INNER JOIN DIRECCION_CLIENTE dc ON dc.id_direccion = en.id_direccion
         ORDER BY en.id_envio DESC")->fetchAll();
 
-    $invoices = $pdo->query("SELECT f.id_factura AS id, f.id_venta, f.fecha_emision, f.uso_cfdi, v.total, c.rfc
+    $invoices = $pdo->query("SELECT f.id_factura AS id, f.id_venta, f.fecha_emision, f.uso_cfdi, v.total, v.canal_venta AS canal, c.id_cliente, c.nombre_razon_social AS cliente, c.rfc
         FROM FACTURA f
         INNER JOIN VENTA v ON v.id_venta = f.id_venta
         INNER JOIN CLIENTE c ON c.id_cliente = v.id_cliente
@@ -316,6 +346,35 @@ try {
             logAction($pdo, 'Empleado creado: ' . ($data['correo'] ?? ''));
             response(['success' => true]);
 
+        case 'create_role':
+            $name = trim(input()['nombre'] ?? '');
+            if ($name === '') response(['error' => 'Nombre de rol requerido.'], 400);
+            $id = ensureRole($pdo, $name);
+            logAction($pdo, 'Rol creado o confirmado: ' . $name);
+            response(['success' => true, 'id' => $id]);
+
+        case 'save_role_permissions':
+            $data = input();
+            $roleId = (int)($data['rol'] ?? 0);
+            $permissions = $data['permisos'] ?? [];
+            if ($roleId <= 0) response(['error' => 'Rol requerido.'], 400);
+            $pdo->beginTransaction();
+            foreach ($permissions as $permissionName) {
+                $permissionName = trim((string)$permissionName);
+                if ($permissionName === '') continue;
+                $stmt = $pdo->prepare('SELECT id_permiso FROM PERMISO WHERE nombre_permiso = ? LIMIT 1');
+                $stmt->execute([$permissionName]);
+                $permissionId = $stmt->fetchColumn();
+                if ($permissionId === false) {
+                    $pdo->prepare('INSERT INTO PERMISO (nombre_permiso) VALUES (?)')->execute([$permissionName]);
+                    $permissionId = (int)$pdo->lastInsertId();
+                }
+                $pdo->prepare('INSERT IGNORE INTO ROL_PERMISO (id_rol, id_permiso) VALUES (?, ?)')->execute([$roleId, $permissionId]);
+            }
+            logAction($pdo, 'Permisos guardados para rol #' . $roleId);
+            $pdo->commit();
+            response(['success' => true]);
+
         case 'delete_employee':
             $id = (int)(input()['id'] ?? 0);
             $pdo->prepare('UPDATE EMPLEADO SET activo = FALSE WHERE id_empleado = ?')->execute([$id]);
@@ -344,26 +403,55 @@ try {
             $clientId = getOrCreateClient($pdo, (int)($data['cliente'] ?? 0));
             $subtotal = 0;
             $validated = [];
+            $branchId = $channel === 'Corporativo' ? 3 : ($channel === 'Fisica' ? 2 : 1);
             foreach ($items as $item) {
                 $productId = (int)$item['id'];
                 $qty = (int)$item['cantidad'];
-                $stock = $pdo->prepare('SELECT cantidad_disponible FROM INVENTARIO WHERE id_sucursal = 1 AND id_producto = ? FOR UPDATE');
-                $stock->execute([$productId]);
+                $stock = $pdo->prepare('SELECT cantidad_disponible FROM INVENTARIO WHERE id_sucursal = ? AND id_producto = ? FOR UPDATE');
+                $stock->execute([$branchId, $productId]);
                 if ((int)$stock->fetchColumn() < $qty) throw new RuntimeException('Stock insuficiente.');
                 $price = currentPrice($pdo, $productId, $channel);
                 $subtotal += $price * $qty;
                 $validated[] = [$productId, $qty, $price];
             }
-            $stmt = $pdo->prepare("INSERT INTO VENTA (id_cliente, id_empleado, id_sucursal, canal_venta, estado_venta, subtotal, total) VALUES (?, 1, 1, ?, 'Pagada', ?, ?)");
-            $stmt->execute([$clientId, $channel, $subtotal, $subtotal]);
+            $stmt = $pdo->prepare("INSERT INTO VENTA (id_cliente, id_empleado, id_sucursal, canal_venta, estado_venta, subtotal, total) VALUES (?, 1, ?, ?, 'Pagada', ?, ?)");
+            $stmt->execute([$clientId, $branchId, $channel, $subtotal, $subtotal]);
             $saleId = (int)$pdo->lastInsertId();
             foreach ($validated as [$productId, $qty, $price]) {
                 $pdo->prepare('INSERT INTO DETALLE_VENTA (id_venta, id_producto, cantidad, precio_unitario_historico) VALUES (?, ?, ?, ?)')->execute([$saleId, $productId, $qty, $price]);
-                $pdo->prepare('UPDATE INVENTARIO SET cantidad_disponible = cantidad_disponible - ? WHERE id_sucursal = 1 AND id_producto = ?')->execute([$qty, $productId]);
+                $pdo->prepare('UPDATE INVENTARIO SET cantidad_disponible = cantidad_disponible - ? WHERE id_sucursal = ? AND id_producto = ?')->execute([$qty, $branchId, $productId]);
             }
+            invoiceAndShippingForSale($pdo, $saleId, $clientId, $channel);
             logAction($pdo, 'Venta registrada en canal ' . $channel . ': #' . $saleId);
             $pdo->commit();
             response(['success' => true, 'venta_id' => $saleId, 'total' => $subtotal]);
+
+        case 'create_manual_invoice':
+            $data = input();
+            $clientId = getOrCreateClient($pdo, (int)($data['cliente'] ?? 0));
+            $channel = in_array(($data['canal'] ?? 'Fisica'), ['Fisica', 'Linea', 'Corporativo'], true) ? $data['canal'] : 'Fisica';
+            $amount = max(1, (float)($data['importe'] ?? 0));
+            $branchId = $channel === 'Corporativo' ? 3 : ($channel === 'Fisica' ? 2 : 1);
+            $pdo->beginTransaction();
+            $stmt = $pdo->prepare("INSERT INTO VENTA (id_cliente, id_empleado, id_sucursal, canal_venta, estado_venta, subtotal, total) VALUES (?, 1, ?, ?, 'Pagada', ?, ?)");
+            $stmt->execute([$clientId, $branchId, $channel, $amount, $amount * 1.16]);
+            $saleId = (int)$pdo->lastInsertId();
+            invoiceAndShippingForSale($pdo, $saleId, $clientId, $channel);
+            logAction($pdo, 'Factura manual emitida en canal ' . $channel . ': venta #' . $saleId);
+            $pdo->commit();
+            response(['success' => true, 'venta_id' => $saleId, 'total' => $amount * 1.16]);
+
+        case 'update_shipment':
+            $data = input();
+            $id = (int)($data['id'] ?? 0);
+            $stateName = trim($data['estado'] ?? 'Preparando');
+            $stmt = $pdo->prepare('SELECT id_estado_envio FROM ESTADO_ENVIO WHERE nombre = ? LIMIT 1');
+            $stmt->execute([$stateName]);
+            $stateId = $stmt->fetchColumn();
+            if ($stateId === false) response(['error' => 'Estado de envio invalido.'], 400);
+            $pdo->prepare('UPDATE ENVIO SET id_estado_envio = ? WHERE id_envio = ?')->execute([(int)$stateId, $id]);
+            logAction($pdo, 'Envio actualizado: #' . $id . ' a ' . $stateName);
+            response(['success' => true]);
 
         default:
             response(['error' => 'Accion no reconocida.'], 404);

@@ -643,4 +643,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   initBackToTop();
   initProgressBar();
   initProductAnimations();
+  qsa('a[href="#"]').forEach(link => {
+    link.addEventListener('click', event => {
+      event.preventDefault();
+      renderProducts(PRODUCTS);
+      initWishlistButtons();
+      qs('.products-grid')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      showToast('Catalogo actualizado desde sistema_ventas');
+    });
+  });
 });

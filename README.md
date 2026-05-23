@@ -112,7 +112,21 @@ El ERP ya opera contra `sistema_ventas` en estos modulos:
 - consulta de facturas;
 - bitacora exportable a CSV.
 
-Al cargar el ERP, si no existen datos suficientes para comparar los tres canales, se crean datos iniciales de demostracion para `Linea`, `Fisica` y `Corporativo`.
+Los nombres visibles de los canales son:
+
+- `Online`: se guarda en la base como `Linea`.
+- `Punto Fisico`: se guarda en la base como `Fisica`.
+- `Corporaciones`: se guarda en la base como `Corporativo`.
+
+Cada venta descuenta inventario de la sucursal asociada al canal, registra `VENTA` y `DETALLE_VENTA`, genera `FACTURA`, crea `ENVIO` cuando aplica y registra la accion en `BITACORA`. Las graficas se actualizan al recargar los datos desde la base.
+
+Los productos iniciales son articulos comerciales reales de ejemplo:
+
+- Laptop Lenovo ThinkPad E16.
+- Monitor Samsung 27 pulgadas FHD.
+- Impresora HP LaserJet Pro M404dn.
+- Silla ergonomica Herman Miller Sayl.
+- Cafetera Nespresso Vertuo Pop.
 
 ## Flujo energetico del ERP
 
