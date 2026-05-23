@@ -230,36 +230,3 @@ https://localhost/phpmyadmin
 10. Revisar que el inventario del producto vendido haya bajado.
 11. Revisar en phpMyAdmin las tablas `VENTA`, `DETALLE_VENTA` e `INVENTARIO`.
 
-## Endpoints
-
-Tienda:
-
-```text
-tienda-de-Monsters-Inc/api.php?action=get_products
-tienda-de-Monsters-Inc/api.php?action=create_sale
-tienda-de-Monsters-Inc/api.php?action=get_sales
-tienda-de-Monsters-Inc/api.php?action=update_sale
-tienda-de-Monsters-Inc/api.php?action=delete_sale
-```
-
-ERP:
-
-```text
-ERP-Monsters-Inc/api.php?action=login
-ERP-Monsters-Inc/api.php?action=initial_data
-ERP-Monsters-Inc/api.php?action=create_product
-ERP-Monsters-Inc/api.php?action=create_sale
-```
-
-## Convencion de commits
-
-Los commits nuevos deben escribirse en primera persona, en minusculas, con lenguaje natural y corto.
-
-Ejemplos:
-
-```text
-ajusto proyectos a base central
-agrego acceso de empleados
-integro tienda con erp
-corrijo carrito de tienda
-```
