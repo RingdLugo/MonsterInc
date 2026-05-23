@@ -1,512 +1,657 @@
-let state = {
-  productos: [],
-  clientes: [],
-  empleados: [],
-  roles: [],
-  sucursales: [],
-  inventario: [],
-  ventasCanal: [],
-  ventasRegion: [],
-  envios: [],
-  facturas: [],
-  bitacora: [],
-  carrito: []
-};
+const CHANNELS = ['Online', 'Punto Físico', 'Corporaciones'];
+const PERMISSIONS = [
+  ['dashboard', 'Ver tablero'],
+  ['pos', 'Procesar despachos'],
+  ['clients', 'Gestionar clientes'],
+  ['inventory', 'Gestionar inventario'],
+  ['billing', 'Emitir CFDI'],
+  ['shipping', 'Gestionar envíos'],
+  ['access', 'Administrar accesos'],
+  ['cut', 'Generar cortes'],
+  ['logs', 'Consultar bitácora']
+];
 
-async function apiRequest(action, options = {}) {
-  const response = await fetch(`api.php?action=${action}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options
-  });
-  const data = await response.json();
-  if (!response.ok || data.error) throw new Error(data.error || 'No fue posible completar la operacion.');
-  return data;
+const initialState = () => ({
+  currentRole: 'Administrador',
+  currentUser: 'James P. Sullivan',
+  activeScreen: 'dashboard',
+  stockFilter: 'all',
+  clientFilter: 'all',
+  invoiceFilter: 'Todos',
+  cutResult: null,
+  roles: {
+    Administrador: PERMISSIONS.map(p => p[0]),
+    Cajero: ['dashboard', 'pos', 'clients', 'billing', 'logs'],
+    'Gestor de Inventario': ['dashboard', 'inventory', 'shipping', 'logs'],
+    Facturación: ['dashboard', 'billing', 'cut', 'logs'],
+    Logística: ['dashboard', 'shipping', 'inventory', 'logs']
+  },
+  branches: [
+    { id: 'B01', name: 'Planta Susto Matriz', type: 'Punto Físico' },
+    { id: 'B02', name: 'Sucursal Susto Norte', type: 'Punto Físico' },
+    { id: 'B03', name: 'Centro de Recargas Online', type: 'Online' },
+    { id: 'B04', name: 'Atención Corporativa Monstrópolis', type: 'Corporaciones' }
+  ],
+  employees: [
+    { id: 'E001', name: 'James P. Sullivan', email: 'sulley@monsters.inc', role: 'Administrador', branch: 'Planta Susto Matriz', active: true },
+    { id: 'E002', name: 'Mike Wazowski', email: 'mike@monsters.inc', role: 'Cajero', branch: 'Planta Susto Matriz', active: true },
+    { id: 'E003', name: 'Celia Mae', email: 'celia@monsters.inc', role: 'Facturación', branch: 'Centro de Recargas Online', active: true },
+    { id: 'E004', name: 'Roz Okonkwo', email: 'roz@monsters.inc', role: 'Gestor de Inventario', branch: 'Sucursal Susto Norte', active: true },
+    { id: 'E005', name: 'Randall Boggs', email: 'randall@monsters.inc', role: 'Logística', branch: 'Atención Corporativa Monstrópolis', active: false },
+    { id: 'E006', name: 'Henry Waternoose', email: 'waternoose@monsters.inc', role: 'Administrador', branch: 'Atención Corporativa Monstrópolis', active: true }
+  ],
+  clients: [
+    { id: 'C001', name: 'Boo Thompson', email: 'boo@humanmail.com', type: 'Cliente Individual', channel: 'Online', branch: 'Centro de Recargas Online', purchases: 4, total: 18400 },
+    { id: 'C002', name: 'Familia Rivera', email: 'rivera@humanmail.com', type: 'Cliente Individual', channel: 'Online', branch: 'Centro de Recargas Online', purchases: 2, total: 7200 },
+    { id: 'C003', name: 'Tienda Monstruo Centro', email: 'compras@tmc.mon', type: 'Cliente Corporativo', channel: 'Corporaciones', branch: 'Atención Corporativa Monstrópolis', purchases: 6, total: 168000 },
+    { id: 'C004', name: 'Universidad del Susto', email: 'energia@us.mon', type: 'Cliente Corporativo', channel: 'Corporaciones', branch: 'Atención Corporativa Monstrópolis', purchases: 3, total: 126000 },
+    { id: 'C005', name: 'George Sanderson', email: 'george@monsters.inc', type: 'Cliente Individual', channel: 'Punto Físico', branch: 'Planta Susto Matriz', purchases: 5, total: 23500 },
+    { id: 'C006', name: 'Fungus Labs', email: 'suministros@fungus.mon', type: 'Cliente Corporativo', channel: 'Corporaciones', branch: 'Atención Corporativa Monstrópolis', purchases: 1, total: 54000 },
+    { id: 'C007', name: 'Abuelita Terror', email: 'terror@humanmail.com', type: 'Cliente Individual', channel: 'Punto Físico', branch: 'Sucursal Susto Norte', purchases: 3, total: 9800 },
+    { id: 'C008', name: 'Hotel Transylvania MX', email: 'compras@transylvania.mon', type: 'Cliente Corporativo', channel: 'Online', branch: 'Centro de Recargas Online', purchases: 2, total: 62000 }
+  ],
+  products: [
+    { id: 'P001', sku: 'MI-GR-100', name: 'Tanque de gritos 100L', category: 'Energía de gritos', branch: 'Planta Susto Matriz', stock: 28, price: 1500 },
+    { id: 'P002', sku: 'MI-GR-500', name: 'Tanque de gritos industrial 500L', category: 'Energía de gritos', branch: 'Atención Corporativa Monstrópolis', stock: 9, price: 6800 },
+    { id: 'P003', sku: 'MI-RS-100', name: 'Tanque de risas 100L', category: 'Energía de risas', branch: 'Centro de Recargas Online', stock: 35, price: 2100 },
+    { id: 'P004', sku: 'MI-RS-XL', name: 'Tanque de risas XL', category: 'Energía de risas', branch: 'Planta Susto Matriz', stock: 6, price: 4300 },
+    { id: 'P005', sku: 'MI-VAL-01', name: 'Válvula CDA segura', category: 'Accesorios', branch: 'Sucursal Susto Norte', stock: 18, price: 420 },
+    { id: 'P006', sku: 'MI-KIT-01', name: 'Kit de recarga doméstica', category: 'Recargas Online', branch: 'Centro de Recargas Online', stock: 0, price: 1250 },
+    { id: 'P007', sku: 'MI-B2B-10', name: 'Paquete corporativo 10 tanques', category: 'Corporativo', branch: 'Atención Corporativa Monstrópolis', stock: 14, price: 56000 },
+    { id: 'P008', sku: 'MI-MED-01', name: 'Medidor de energía de risas', category: 'Medición', branch: 'Sucursal Susto Norte', stock: 22, price: 890 },
+    { id: 'P009', sku: 'MI-PUR-77', name: 'Purificador anti-contaminación CDA', category: 'Seguridad', branch: 'Planta Susto Matriz', stock: 11, price: 1750 },
+    { id: 'P010', sku: 'MI-REC-24', name: 'Recarga nocturna programada', category: 'Servicio', branch: 'Centro de Recargas Online', stock: 60, price: 980 }
+  ],
+  sales: [
+    { id: 'S001', date: daysAgo(6), channel: 'Online', clientId: 'C001', branch: 'Centro de Recargas Online', total: 4200, tax: 579.31, items: [{ productId: 'P003', qty: 2, price: 2100 }] },
+    { id: 'S002', date: daysAgo(5), channel: 'Punto Físico', clientId: 'C005', branch: 'Planta Susto Matriz', total: 3000, tax: 413.79, items: [{ productId: 'P001', qty: 2, price: 1500 }] },
+    { id: 'S003', date: daysAgo(4), channel: 'Corporaciones', clientId: 'C003', branch: 'Atención Corporativa Monstrópolis', total: 112000, tax: 15448.28, items: [{ productId: 'P007', qty: 2, price: 56000 }] },
+    { id: 'S004', date: daysAgo(3), channel: 'Online', clientId: 'C008', branch: 'Centro de Recargas Online', total: 12500, tax: 1724.14, items: [{ productId: 'P006', qty: 10, price: 1250 }] },
+    { id: 'S005', date: daysAgo(2), channel: 'Punto Físico', clientId: 'C007', branch: 'Sucursal Susto Norte', total: 2670, tax: 368.28, items: [{ productId: 'P008', qty: 3, price: 890 }] },
+    { id: 'S006', date: daysAgo(1), channel: 'Corporaciones', clientId: 'C004', branch: 'Atención Corporativa Monstrópolis', total: 68000, tax: 9379.31, items: [{ productId: 'P002', qty: 10, price: 6800 }] }
+  ],
+  invoices: [
+    { id: 'F001', saleId: 'S001', clientId: 'C001', channel: 'Online', concept: 'Recarga de energía de risas', subtotal: 3620.69, tax: 579.31, total: 4200, status: 'Emitida', date: daysAgo(6) },
+    { id: 'F002', saleId: 'S002', clientId: 'C005', channel: 'Punto Físico', concept: 'Despacho de energía en mostrador', subtotal: 2586.21, tax: 413.79, total: 3000, status: 'Emitida', date: daysAgo(5) },
+    { id: 'F003', saleId: 'S003', clientId: 'C003', channel: 'Corporaciones', concept: 'Contrato industrial de energía', subtotal: 96551.72, tax: 15448.28, total: 112000, status: 'Emitida', date: daysAgo(4) },
+    { id: 'F004', saleId: 'S004', clientId: 'C008', channel: 'Online', concept: 'Recarga programada', subtotal: 10775.86, tax: 1724.14, total: 12500, status: 'Pendiente XML', date: daysAgo(3) },
+    { id: 'F005', saleId: 'S006', clientId: 'C004', channel: 'Corporaciones', concept: 'Suministro B2B Monstrópolis', subtotal: 58620.69, tax: 9379.31, total: 68000, status: 'Emitida', date: daysAgo(1) }
+  ],
+  shipments: [
+    { id: 'ENV001', saleId: 'S001', channel: 'Online', clientId: 'C001', branch: 'Centro de Recargas Online', destination: 'Habitación humana asignada 23-B', status: 'En Ruta', eta: futureDays(1) },
+    { id: 'ENV002', saleId: 'S004', channel: 'Online', clientId: 'C008', branch: 'Centro de Recargas Online', destination: 'Hotel Transylvania MX, almacén 4', status: 'Pendiente', eta: futureDays(2) },
+    { id: 'ENV003', saleId: 'S003', channel: 'Corporaciones', clientId: 'C003', branch: 'Atención Corporativa Monstrópolis', destination: 'Distrito Industrial de Monstrópolis', status: 'Entregado', eta: daysAgo(2) },
+    { id: 'ENV004', saleId: 'S006', channel: 'Corporaciones', clientId: 'C004', branch: 'Atención Corporativa Monstrópolis', destination: 'Campus Universidad del Susto', status: 'En Ruta', eta: futureDays(3) }
+  ],
+  logs: [
+    logSeed('Sistema', 'General', 'Inicialización', 'Carga inicial del ERP de energía Monsters Inc.'),
+    logSeed('Administrador', 'Online', 'Venta importada', 'Pedido web inicial asignado al Centro de Recargas Online.'),
+    logSeed('Administrador', 'Corporaciones', 'Contrato activo', 'Contrato B2B registrado para Tienda Monstruo Centro.'),
+    logSeed('Gestor de Inventario', 'Punto Físico', 'Inventario auditado', 'Conteo inicial en Planta Susto Matriz completado.'),
+    logSeed('Facturación', 'Corporaciones', 'CFDI emitido', 'Factura fiscal de energía F003 creada.')
+  ],
+  cart: [],
+  lastDocument: ''
+});
+
+let state = loadState();
+
+const screens = [
+  ['dashboard', 'Tablero'],
+  ['pos', 'POS Energía'],
+  ['clients', 'Clientes'],
+  ['inventory', 'Inventario'],
+  ['billing', 'Facturación'],
+  ['shipping', 'Envíos'],
+  ['access', 'Accesos'],
+  ['cut', 'Corte'],
+  ['logs', 'Bitácora']
+];
+
+function daysAgo(n) {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.toISOString().slice(0, 10);
 }
 
-const money = value => '$' + Number(value || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const esc = value => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;');
-
-async function cargarDatosBackend() {
-  try {
-    const data = await apiRequest('dashboard_data');
-    state.productos = data.products || [];
-    state.clientes = data.clients || [];
-    state.empleados = data.employees || [];
-    state.roles = data.roles || [];
-    state.sucursales = data.branches || [];
-    state.inventario = data.inventory || [];
-    state.ventasCanal = data.salesByChannel || [];
-    state.ventasRegion = data.salesByRegion || [];
-    state.envios = data.shipments || [];
-    state.facturas = data.invoices || [];
-    state.bitacora = data.logs || [];
-
-    prepararSelects();
-    renderizarTodo();
-  } catch (error) {
-    alert(`Error al cargar datos del ERP: ${error.message}`);
-  }
+function futureDays(n) {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
 }
 
-function prepararSelects() {
-  const sucursalVenta = document.getElementById('sucursalVenta');
-  if (sucursalVenta) {
-    sucursalVenta.innerHTML = state.sucursales.map(s => `<option value="${s.id}">${esc(s.nombre)}</option>`).join('');
-  }
-
-  const clienteVenta = document.getElementById('clienteVenta');
-  if (clienteVenta) {
-    clienteVenta.innerHTML = '<option value="">Publico en general</option>' + state.clientes.map(c => `<option value="${c.id}">${esc(c.nombre)} - ${esc(c.tipo)}</option>`).join('');
-  }
-
-  const filtroSucursal = document.getElementById('filtroSucursal');
-  if (filtroSucursal) {
-    filtroSucursal.innerHTML = '<option value="">Todas las sucursales</option>' + state.sucursales.map(s => `<option value="${s.id}">${esc(s.nombre)}</option>`).join('');
-    filtroSucursal.onchange = renderizarInventario;
-  }
+function nowStamp() {
+  return new Date().toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'medium' });
 }
 
-async function iniciarSesion(event) {
-  event.preventDefault();
-  try {
-    const data = await apiRequest('login', {
-      method: 'POST',
-      body: JSON.stringify({
-        correo: document.getElementById('login-correo').value,
-        password: document.getElementById('login-pass').value
-      })
-    });
-
-    document.querySelector('.nombre-user').textContent = `${data.empleado.nombre} - ${data.empleado.rol}`;
-    document.querySelector('.correo-user').textContent = `Sucursal: ${data.empleado.sucursal}`;
-    document.getElementById('pantalla-login').style.display = 'none';
-    document.getElementById('app-dashboard').style.display = 'flex';
-    await cargarDatosBackend();
-  } catch (error) {
-    alert(`No se pudo iniciar sesion: ${error.message}`);
-  }
+function logSeed(role, channel, action, detail) {
+  return { id: crypto.randomUUID(), date: nowStamp(), role, channel, module: action.split(' ')[0], action, detail };
 }
 
-function cerrarSesion() {
-  document.getElementById('app-dashboard').style.display = 'none';
-  document.getElementById('pantalla-login').style.display = 'flex';
-  document.getElementById('login-correo').value = '';
-  document.getElementById('login-pass').value = '';
+function loadState() {
+  const raw = localStorage.getItem('monsters-erp-state-v3');
+  return raw ? JSON.parse(raw) : initialState();
 }
 
-function mostrarSeccion(idSeccion, botonPresionado) {
-  document.querySelectorAll('.seccion').forEach(sec => sec.classList.remove('activa'));
-  document.getElementById(idSeccion).classList.add('activa');
-  document.querySelectorAll('.menu-btn').forEach(btn => btn.classList.remove('activo'));
-  botonPresionado.classList.add('activo');
-  if (idSeccion === 'sec-pos') renderizarGraficas();
+function saveState() {
+  localStorage.setItem('monsters-erp-state-v3', JSON.stringify(state));
 }
 
-function cambiarTab(idTab, botonPresionado) {
-  document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('activa'));
-  document.getElementById(idTab).classList.add('activa');
-  document.querySelectorAll('.tab-btn').forEach(button => button.classList.remove('tab-activo'));
-  botonPresionado.classList.add('tab-activo');
+function setState(mutator) {
+  mutator(state);
+  saveState();
+  render();
 }
 
-function renderizarTodo() {
-  renderizarGraficas();
-  renderizarTablaProductos();
-  renderizarTablaClientes();
-  renderizarInventario();
-  renderizarEnvios();
-  renderizarFacturas();
-  renderizarPersonal();
-  renderizarRoles();
-  renderizarBitacora();
-  renderizarCarrito();
+function money(v) {
+  return '$' + Number(v || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function ensureCharts() {
-  const section = document.getElementById('sec-pos');
-  if (!section || document.getElementById('erpCharts')) return;
-  const box = document.createElement('div');
-  box.id = 'erpCharts';
-  box.className = 'grid-2-col';
-  box.style.marginBottom = '18px';
-  box.innerHTML = `
-    <div class="card">
-      <h2>Ventas por Canal</h2>
-      <canvas id="chartCanales" height="180"></canvas>
-    </div>
-    <div class="card">
-      <h2>Desempeno por Region</h2>
-      <canvas id="chartRegiones" height="180"></canvas>
-    </div>`;
-  section.insertBefore(box, section.children[1] || null);
+function byId(list, id) {
+  return list.find(x => x.id === id);
 }
 
-function drawBarChart(canvasId, rows, labelKey, valueKey, colors) {
-  const canvas = document.getElementById(canvasId);
+function addLog(channel, module, action, detail) {
+  state.logs.unshift({ id: crypto.randomUUID(), date: nowStamp(), role: state.currentRole, channel, module, action, detail });
+}
+
+function can(permission) {
+  return (state.roles[state.currentRole] || []).includes(permission);
+}
+
+function requirePermission(permission) {
+  if (can(permission)) return true;
+  alert(`Acceso Denegado: el rol "${state.currentRole}" no tiene permiso para esta acción.`);
+  addLog('General', 'Seguridad', 'Acceso denegado', `Intento de usar permiso ${permission}`);
+  setState(s => s);
+  return false;
+}
+
+function render() {
+  renderNavigation();
+  renderRoleSelectors();
+  renderKpis();
+  renderCharts();
+  renderPOS();
+  renderClients();
+  renderInventory();
+  renderBilling();
+  renderShipping();
+  renderAccess();
+  renderCut();
+  renderLogs();
+  bindDynamicButtons();
+}
+
+function renderNavigation() {
+  const nav = document.getElementById('navigation');
+  nav.innerHTML = screens.map(([id, label]) => `<button class="nav-button ${state.activeScreen === id ? 'active' : ''}" data-screen="${id}"><span>${label}</span><small>${can(id) ? 'OK' : 'Bloq.'}</small></button>`).join('');
+  document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === state.activeScreen));
+  const current = screens.find(s => s[0] === state.activeScreen);
+  document.getElementById('screenTitle').textContent = current ? current[1] : 'Tablero';
+}
+
+function renderRoleSelectors() {
+  const roles = Object.keys(state.roles);
+  document.getElementById('currentRole').innerHTML = roles.map(r => `<option ${r === state.currentRole ? 'selected' : ''}>${r}</option>`).join('');
+  document.getElementById('employeeRole').innerHTML = roles.map(r => `<option>${r}</option>`).join('');
+  document.getElementById('roleEditor').innerHTML = roles.map(r => `<option ${r === state.currentRole ? 'selected' : ''}>${r}</option>`).join('');
+  document.getElementById('employeeBranch').innerHTML = state.branches.map(b => `<option>${b.name}</option>`).join('');
+  document.getElementById('clientBranch').innerHTML = state.branches.map(b => `<option>${b.name}</option>`).join('');
+  document.getElementById('posClient').innerHTML = state.clients.map(c => `<option value="${c.id}">${c.name} - ${c.channel}</option>`).join('');
+  document.getElementById('invoiceClient').innerHTML = state.clients.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+  document.getElementById('posProduct').innerHTML = state.products.filter(p => p.stock > 0).map(p => `<option value="${p.id}">${p.sku} - ${p.name} (${p.stock})</option>`).join('');
+  const selectedRole = document.getElementById('roleEditor').value || state.currentRole;
+  document.getElementById('permissionChecklist').innerHTML = PERMISSIONS.map(([key, label]) => `<label class="checkitem"><span>${label}</span><input type="checkbox" data-permission="${key}" ${(state.roles[selectedRole] || []).includes(key) ? 'checked' : ''}></label>`).join('');
+}
+
+function renderKpis() {
+  const totalSales = state.sales.reduce((s, x) => s + x.total, 0);
+  const totalStock = state.products.reduce((s, x) => s + x.stock, 0);
+  const pendingShipments = state.shipments.filter(s => s.status !== 'Entregado').length;
+  document.getElementById('kpiCards').innerHTML = [
+    ['Energía vendida', money(totalSales)],
+    ['Inventario tanques', totalStock],
+    ['Clientes activos', state.clients.length],
+    ['Envíos pendientes', pendingShipments]
+  ].map(([label, value]) => `<div class="kpi"><span>${label}</span><strong>${value}</strong></div>`).join('');
+}
+
+function chartRowsByChannel() {
+  return CHANNELS.map(channel => ({
+    label: channel,
+    value: state.sales.filter(s => s.channel === channel).reduce((sum, s) => sum + s.total, 0)
+  }));
+}
+
+function renderCharts() {
+  drawBars('channelChart', chartRowsByChannel(), ['#2364aa', '#078b63', '#7357c8']);
+  drawBars('clientChart', CHANNELS.map(c => ({ label: c, value: state.clients.filter(x => x.channel === c).length })), ['#2364aa', '#078b63', '#7357c8']);
+  drawBars('branchChart', state.branches.map(b => ({ label: b.name.replace('Monstrópolis', 'Corp.'), value: state.clients.filter(c => c.branch === b.name).length })), ['#1d4ed8', '#0f766e', '#b45309', '#7c3aed']);
+  document.getElementById('recentLogRows').innerHTML = state.logs.slice(0, 6).map(l => `<tr><td>${l.date}</td><td>${l.role}</td><td><span class="badge">${l.channel}</span></td><td>${l.action}</td></tr>`).join('');
+}
+
+function drawBars(id, rows, colors) {
+  const canvas = document.getElementById(id);
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
-  const width = canvas.width = canvas.clientWidth || 420;
-  const height = canvas.height = Number(canvas.getAttribute('height')) || 180;
+  const width = canvas.width = canvas.clientWidth || 480;
+  const height = canvas.height = Number(canvas.getAttribute('height')) || 220;
   ctx.clearRect(0, 0, width, height);
-  const max = Math.max(1, ...rows.map(r => Number(r[valueKey] || 0)));
-  const gap = 18;
-  const barWidth = Math.max(34, (width - gap * (rows.length + 1)) / Math.max(1, rows.length));
-  rows.forEach((row, index) => {
-    const value = Number(row[valueKey] || 0);
-    const barHeight = (height - 55) * value / max;
-    const x = gap + index * (barWidth + gap);
-    const y = height - 35 - barHeight;
-    ctx.fillStyle = colors[index % colors.length];
-    ctx.fillRect(x, y, barWidth, barHeight);
-    ctx.fillStyle = '#0f172a';
-    ctx.font = '12px sans-serif';
-    ctx.fillText(String(row[labelKey]).slice(0, 14), x, height - 14);
-    ctx.fillText(valueKey === 'total' ? money(value) : String(value), x, Math.max(14, y - 6));
+  const max = Math.max(1, ...rows.map(r => Number(r.value)));
+  const gap = 16;
+  const bar = Math.max(34, (width - gap * (rows.length + 1)) / rows.length);
+  rows.forEach((r, i) => {
+    const h = (height - 58) * Number(r.value) / max;
+    const x = gap + i * (bar + gap);
+    const y = height - 34 - h;
+    ctx.fillStyle = colors[i % colors.length];
+    ctx.fillRect(x, y, bar, h);
+    ctx.fillStyle = '#172033';
+    ctx.font = '12px Arial';
+    ctx.fillText(String(r.label).slice(0, 16), x, height - 12);
+    ctx.fillText(Number(r.value) > 999 ? money(r.value) : String(r.value), x, Math.max(14, y - 7));
   });
 }
 
-function renderizarGraficas() {
-  ensureCharts();
-  const channels = ['Linea', 'Fisica', 'Corporativo'].map(canal => {
-    const found = state.ventasCanal.find(row => row.canal === canal);
-    return { canal, total: Number(found?.total || 0), ventas: Number(found?.ventas || 0) };
-  });
-  drawBarChart('chartCanales', channels, 'canal', 'total', ['#2563eb', '#10b981', '#f59e0b']);
-  drawBarChart('chartRegiones', state.ventasRegion, 'region', 'total', ['#7c3aed', '#0891b2', '#dc2626']);
-}
-
-function agregarProductoVenta() {
-  const sku = document.getElementById('skuBusqueda').value.trim().toUpperCase();
-  const producto = state.productos.find(p => p.sku.toUpperCase() === sku);
-  if (!producto) return alert('SKU no encontrado.');
-  if (Number(producto.stock) <= 0) return alert('No hay inventario disponible.');
-  const item = state.carrito.find(i => i.id === producto.id);
-  if (item) item.cantidad++;
-  else state.carrito.push({ ...producto, cantidad: 1 });
-  document.getElementById('skuBusqueda').value = '';
-  renderizarCarrito();
-}
-
-function renderizarCarrito() {
-  const tbody = document.getElementById('tablaCarrito');
-  if (!tbody) return;
-  if (state.carrito.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#94a3b8; padding:20px;">Sin productos agregados</td></tr>';
-    const subtotal = document.getElementById('resumenSubtotal');
-    const total = document.getElementById('resumenTotal');
-    if (subtotal) subtotal.textContent = '$0.00';
-    if (total) total.textContent = '$0.00';
-    return;
-  }
-  tbody.innerHTML = state.carrito.map((item, index) => `
-    <tr>
-      <td>${esc(item.nombre)}</td>
-      <td><button class="btn-sm btn-gray" onclick="cambiarCantidad(${index}, -1)">-</button> ${item.cantidad} <button class="btn-sm" onclick="cambiarCantidad(${index}, 1)">+</button></td>
-      <td>${money(item.precio)}</td>
-      <td>${money(item.precio * item.cantidad)}</td>
-    </tr>`).join('');
-  const subtotal = state.carrito.reduce((sum, item) => sum + item.precio * item.cantidad, 0);
-  document.getElementById('resumenSubtotal').textContent = money(subtotal);
-  document.getElementById('resumenDescuento').textContent = '-$0.00';
-  document.getElementById('resumenTotal').textContent = money(subtotal);
-}
-
-function cambiarCantidad(index, delta) {
-  state.carrito[index].cantidad += delta;
-  if (state.carrito[index].cantidad <= 0) state.carrito.splice(index, 1);
-  renderizarCarrito();
-}
-
-async function procesarVenta() {
-  if (!state.carrito.length) return alert('Agrega al menos un producto.');
-  try {
-    const canal = mapCanal(document.getElementById('canalVenta')?.value || 'Fisica');
-    const data = await apiRequest('create_sale', {
-      method: 'POST',
-      body: JSON.stringify({
-        canal,
-        cliente: Number(document.getElementById('clienteVenta')?.value || 0),
-        items: state.carrito.map(item => ({ id: item.id, cantidad: item.cantidad }))
-      })
-    });
-    alert(`Venta procesada.\nVenta #${data.venta_id}\nTotal: ${money(data.total)}`);
-    state.carrito = [];
-    await cargarDatosBackend();
-  } catch (error) {
-    alert(`Error al procesar venta: ${error.message}`);
-  }
-}
-
-function mapCanal(value) {
-  const normalized = String(value).toLowerCase();
-  if (normalized.includes('online') || normalized.includes('linea')) return 'Linea';
-  if (normalized.includes('corporativo')) return 'Corporativo';
-  return 'Fisica';
-}
-
-async function registrarProducto(event) {
-  event.preventDefault();
-  try {
-    await apiRequest('create_product', {
-      method: 'POST',
-      body: JSON.stringify({
-        nombre: document.getElementById('nombreProducto').value,
-        sku: document.getElementById('skuProducto').value,
-        precio: Number(document.getElementById('precioProducto').value),
-        categoria: document.getElementById('categoriaProducto').value
-      })
-    });
-    event.target.reset();
-    await cargarDatosBackend();
-    alert('Producto registrado.');
-  } catch (error) {
-    alert(error.message);
-  }
-}
-
-function renderizarTablaProductos(list = state.productos) {
-  const tbody = document.getElementById('tablaProductos');
-  if (!tbody) return;
-  tbody.innerHTML = list.map(p => `
-    <tr>
-      <td><span class="badge-sku">${esc(p.sku)}</span></td>
-      <td>${esc(p.nombre)}</td>
-      <td>${money(p.precio)}</td>
-      <td><span class="tag">${esc(p.categoria)}</span></td>
-      <td><button class="btn-sm btn-gray" onclick="alert('Producto conectado a PRECIO_CANAL e INVENTARIO')">Ver</button></td>
-    </tr>`).join('') || '<tr><td colspan="5">No hay productos.</td></tr>';
-}
-
-function filtrarProductos() {
-  const q = document.getElementById('buscarProducto').value.toLowerCase();
-  renderizarTablaProductos(state.productos.filter(p => p.nombre.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)));
-}
-
-async function registrarCliente(event) {
-  event.preventDefault();
-  try {
-    await apiRequest('create_client', {
-      method: 'POST',
-      body: JSON.stringify({
-        tipo: document.getElementById('tipoCliente').value,
-        nombre: document.getElementById('nombreCliente').value,
-        rfc: document.getElementById('rfcCliente').value,
-        correo: document.getElementById('correoCliente').value,
-        telefono: document.getElementById('telefonoCliente').value,
-        direccion: document.getElementById('direccionCliente').value,
-        ciudad: document.getElementById('ciudadCliente').value,
-        estado: document.getElementById('estadoCliente').value,
-        cp: document.getElementById('cpCliente').value
-      })
-    });
-    event.target.reset();
-    await cargarDatosBackend();
-    alert('Cliente registrado.');
-  } catch (error) {
-    alert(error.message);
-  }
-}
-
-async function eliminarCliente(id) {
-  if (!confirm('Eliminar cliente sin ventas asociadas?')) return;
-  try {
-    await apiRequest('delete_client', { method: 'POST', body: JSON.stringify({ id }) });
-    await cargarDatosBackend();
-  } catch (error) {
-    alert(error.message);
-  }
-}
-
-function renderizarTablaClientes(list = state.clientes) {
-  const tbody = document.getElementById('tablaClientes');
-  if (!tbody) return;
-  tbody.innerHTML = list.map(c => `
-    <tr>
-      <td><strong>${esc(c.nombre)}</strong><div style="font-size:11px;color:#64748b">Linea ${money(c.total_linea)} | Fisica ${money(c.total_fisica)} | Corp ${money(c.total_corporativo)}</div></td>
-      <td><span class="mono">${esc(c.rfc || '-')}</span></td>
-      <td><span class="tag ${c.tipo === 'Corporativo' ? 'tag-purple' : 'tag-blue'}">${esc(c.tipo)}</span></td>
-      <td>${esc(c.correo || '-')}</td>
-      <td><button class="btn-sm btn-gray" onclick="eliminarCliente(${c.id})">Eliminar</button></td>
-    </tr>`).join('') || '<tr><td colspan="5">No hay clientes.</td></tr>';
-}
-
-function filtrarClientes(q) {
-  const query = q.toLowerCase();
-  renderizarTablaClientes(state.clientes.filter(c => c.nombre.toLowerCase().includes(query) || (c.rfc || '').toLowerCase().includes(query) || (c.correo || '').toLowerCase().includes(query)));
-}
-
-function renderizarInventario() {
-  const tbody = document.getElementById('tablaInventario');
-  if (!tbody) return;
-  const filter = document.getElementById('filtroSucursal')?.value;
-  const rows = state.inventario.filter(i => !filter || String(i.id_sucursal) === filter);
-  tbody.innerHTML = rows.map(i => {
-    const stock = Number(i.stock);
-    const status = stock <= 0 ? ['status-danger', 'Agotado'] : stock < 10 ? ['status-warn', 'Bajo'] : ['status-ok', 'OK'];
-    return `<tr>
-      <td><span class="badge-sku">${esc(i.sku)}</span></td>
-      <td>${esc(i.nombre)}</td>
-      <td>${esc(i.sucursal)}</td>
-      <td><strong>${stock}</strong></td>
-      <td><span class="status-badge ${status[0]}">${status[1]}</span></td>
-      <td><button class="btn-sm btn-gray" onclick="abrirModalAjusteStock('${esc(i.sku)}', ${i.id_sucursal})">Ajustar</button></td>
-    </tr>`;
+function renderPOS() {
+  const rows = state.cart.map(item => {
+    const product = byId(state.products, item.productId);
+    return `<tr><td>${product.name}</td><td>${item.qty}</td><td>${money(product.price)}</td><td>${money(item.qty * product.price)}</td><td><button class="ghost" data-remove-cart="${item.productId}">Quitar</button></td></tr>`;
   }).join('');
-  const values = document.querySelectorAll('#sec-inventario .stat-value');
-  if (values[0]) values[0].textContent = state.productos.length;
-  if (values[1]) values[1].textContent = state.inventario.filter(i => Number(i.stock) > 0 && Number(i.stock) < 10).length;
-  if (values[2]) values[2].textContent = state.inventario.filter(i => Number(i.stock) <= 0).length;
-  if (values[3]) values[3].textContent = state.inventario.filter(i => Number(i.stock) > 0).length;
+  document.getElementById('cartRows').innerHTML = rows || '<tr><td colspan="5">Sin conceptos en el ticket.</td></tr>';
+  document.getElementById('cartTotal').textContent = money(state.cart.reduce((sum, item) => sum + item.qty * byId(state.products, item.productId).price, 0));
+  document.getElementById('lastOperation').innerHTML = state.lastDocument || 'La última operación aparecerá aquí con su ticket o CFDI.';
 }
 
-function abrirModalAjusteStock(sku = '', sucursal = 1) {
-  const modal = document.getElementById('modalAjusteStock');
-  modal.style.display = 'flex';
-  const selects = modal.querySelectorAll('select');
-  const inputs = modal.querySelectorAll('input');
-  if (selects[0]) selects[0].innerHTML = state.sucursales.map(s => `<option value="${s.id}" ${Number(s.id) === Number(sucursal) ? 'selected' : ''}>${esc(s.nombre)}</option>`).join('');
-  if (inputs[0]) inputs[0].value = sku;
-  if (inputs[1]) inputs[1].value = '';
-  const save = modal.querySelector('button');
-  save.onclick = guardarAjusteStock;
+function renderClients() {
+  const filtered = state.clientFilter === 'all' ? state.clients : state.clients.filter(c => c.type === state.clientFilter);
+  document.getElementById('clientRows').innerHTML = filtered.map(c => `<tr><td><strong>${c.name}</strong><br><small>${c.email}</small></td><td>${c.type}</td><td><span class="badge">${c.channel}</span></td><td>${c.branch}</td><td>${c.purchases}</td><td>${money(c.total)}</td><td><button class="ghost" data-delete-client="${c.id}">Eliminar</button></td></tr>`).join('');
 }
 
-async function guardarAjusteStock() {
-  const modal = document.getElementById('modalAjusteStock');
-  const selects = modal.querySelectorAll('select');
-  const inputs = modal.querySelectorAll('input');
-  try {
-    await apiRequest('adjust_stock', { method: 'POST', body: JSON.stringify({ sucursal: Number(selects[0].value), sku: inputs[0].value, cantidad: Number(inputs[1].value) }) });
-    cerrarModal('modalAjusteStock');
-    await cargarDatosBackend();
-  } catch (error) {
-    alert(error.message);
-  }
-}
-
-function renderizarEnvios() {
-  const tbody = document.getElementById('tablaEnvios');
-  if (!tbody) return;
-  tbody.innerHTML = state.envios.map(e => `<tr>
-    <td><span class="mono">#ENV-${e.id}</span></td>
-    <td>#VTA-${e.id_venta}</td>
-    <td>${esc(e.direccion)}</td>
-    <td><span class="mono">${esc(e.numero_guia || '-')}</span></td>
-    <td>${esc(e.fecha_estimada_entrega || '-')}</td>
-    <td><span class="status-badge status-warn">${esc(e.estado)}</span></td>
-    <td><button class="btn-sm" onclick="abrirModalEnvio('ENV-${e.id}')">Ver</button></td>
-  </tr>`).join('') || '<tr><td colspan="7">No hay envios registrados. Se generan cuando existan direcciones y ventas en linea.</td></tr>';
-}
-
-function abrirModalEnvio(id) {
-  document.getElementById('modalEnvioId').textContent = `#${id}`;
-  document.getElementById('modalDetalleEnvio').style.display = 'flex';
-}
-
-function renderizarFacturas() {
-  const tbody = document.getElementById('tablaFacturas');
-  if (!tbody) return;
-  tbody.innerHTML = state.facturas.map(f => `<tr>
-    <td><span class="mono">FAC-${String(f.id).padStart(4, '0')}</span></td>
-    <td><span class="mono">${esc(f.rfc || '-')}</span></td>
-    <td>${esc(f.fecha_emision)}</td>
-    <td>${money(f.total)}</td>
-    <td><span class="status-badge status-ok">Timbrada</span></td>
-    <td><button class="btn-sm btn-gray">Ver</button></td>
-  </tr>`).join('') || '<tr><td colspan="6">No hay facturas emitidas.</td></tr>';
-}
-
-function generarCFDI() {
-  const rfc = document.getElementById('rfcFactura').value;
-  if (!rfc) return alert('Ingresa el RFC del cliente.');
-  alert(`CFDI preparado para RFC ${rfc.toUpperCase()}. La tabla FACTURA esta lista para timbrado real.`);
-}
-
-function renderizarPersonal() {
-  const tbody = document.querySelector('#tab-empleados table tbody');
-  if (!tbody) return;
-  tbody.innerHTML = state.empleados.map(e => `<tr>
-    <td><strong>${esc(e.nombre)}</strong><small style="display:block;color:#94a3b8">${esc(e.correo)}</small></td>
-    <td><span class="tag">${esc(e.rol)}</span></td>
-    <td>${esc(e.sucursal || '-')}</td>
-    <td><span class="status-badge ${Number(e.activo) ? 'status-ok' : 'status-danger'}">${Number(e.activo) ? 'Activo' : 'Inactivo'}</span></td>
-    <td><button class="btn-sm btn-gray" onclick="eliminarEmpleado(${e.id})">Desactivar</button></td>
-  </tr>`).join('');
-  prepararFormularioEmpleado();
-}
-
-function prepararFormularioEmpleado() {
-  const form = document.querySelector('#tab-empleados form');
-  if (!form || form.dataset.ready) return;
-  form.dataset.ready = '1';
-  const roleSelect = form.querySelectorAll('select')[0];
-  const branchSelect = form.querySelectorAll('select')[1];
-  roleSelect.innerHTML = state.roles.map(r => `<option value="${r.id}">${esc(r.nombre)}</option>`).join('');
-  branchSelect.innerHTML = state.sucursales.map(s => `<option value="${s.id}">${esc(s.nombre)}</option>`).join('');
-  form.onsubmit = registrarEmpleado;
-}
-
-async function registrarEmpleado(event) {
-  event.preventDefault();
-  const form = event.target;
-  const inputs = form.querySelectorAll('input');
-  const selects = form.querySelectorAll('select');
-  try {
-    await apiRequest('create_employee', {
-      method: 'POST',
-      body: JSON.stringify({ nombre: inputs[0].value, correo: inputs[1].value, password: inputs[2].value, rol: Number(selects[0].value), sucursal: Number(selects[1].value) })
-    });
-    form.reset();
-    await cargarDatosBackend();
-  } catch (error) {
-    alert(error.message);
-  }
-}
-
-async function eliminarEmpleado(id) {
-  if (!confirm('Desactivar empleado?')) return;
-  await apiRequest('delete_employee', { method: 'POST', body: JSON.stringify({ id }) });
-  await cargarDatosBackend();
-}
-
-function renderizarRoles() {
-  const tbody = document.querySelector('#tab-roles table tbody');
-  if (!tbody) return;
-  tbody.innerHTML = state.roles.map(r => `<tr><td><span class="mono">ROL-${r.id}</span></td><td><strong>${esc(r.nombre)}</strong></td><td><span class="tag">Permisos operativos</span></td><td><button class="btn-sm btn-gray" onclick="alert('Rol conectado a ROL y ROL_PERMISO')">Ver</button></td></tr>`).join('');
-}
-
-function renderizarBitacora() {
-  const tbody = document.getElementById('tablaBitacora');
-  if (!tbody) return;
-  tbody.innerHTML = state.bitacora.map(log => `<tr>
-    <td><span class="mono" style="font-size:12px">${esc(log.fecha)}</span></td>
-    <td>${esc(log.empleado)}</td>
-    <td><span class="tag">${esc((log.accion || '').split(':')[0])}</span></td>
-    <td>${esc(log.accion)}</td>
-    <td style="font-size:12px;color:#64748b">Registrado en tabla BITACORA</td>
-  </tr>`).join('') || '<tr><td colspan="5">Sin movimientos.</td></tr>';
-  document.querySelectorAll('#sec-bitacora .paginacion button, #sec-bitacora .btn-sm').forEach(button => {
-    if (button.textContent.toLowerCase().includes('exportar')) button.onclick = exportarBitacora;
+function renderInventory() {
+  const filtered = state.products.filter(p => {
+    if (state.stockFilter === 'low') return p.stock > 0 && p.stock < 10;
+    if (state.stockFilter === 'zero') return p.stock === 0;
+    if (state.stockFilter === 'available') return p.stock > 10;
+    return true;
   });
+  document.getElementById('inventoryRows').innerHTML = filtered.map(p => `<tr><td><span class="badge">${p.sku}</span></td><td>${p.name}</td><td>${p.category}</td><td>${p.branch}</td><td>${p.stock}</td><td>${money(p.price)}</td><td><button class="ghost" data-edit-product="${p.id}">Ver/Editar</button></td></tr>`).join('');
 }
 
-function exportarBitacora() {
-  const csv = ['fecha,empleado,accion', ...state.bitacora.map(log => `"${log.fecha}","${log.empleado}","${log.accion}"`)].join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+function renderBilling() {
+  calculateInvoicePreview();
+  const query = document.getElementById('invoiceSearch')?.value?.toLowerCase() || '';
+  const channel = state.invoiceFilter;
+  const rows = state.invoices.filter(f => {
+    const client = byId(state.clients, f.clientId);
+    const matchText = f.id.toLowerCase().includes(query) || client.name.toLowerCase().includes(query);
+    const matchChannel = channel === 'Todos' || f.channel === channel;
+    return matchText && matchChannel;
+  });
+  document.getElementById('invoiceRows').innerHTML = rows.map(f => {
+    const client = byId(state.clients, f.clientId);
+    return `<tr><td>${f.id}</td><td>${client.name}</td><td><span class="badge">${f.channel}</span></td><td>${money(f.total)}</td><td><span class="status ok">${f.status}</span></td><td><button class="ghost" data-download-cfdi="${f.id}">PDF/XML</button></td></tr>`;
+  }).join('');
+}
+
+function renderShipping() {
+  document.getElementById('shipmentRows').innerHTML = state.shipments.map(s => {
+    const client = byId(state.clients, s.clientId);
+    return `<tr><td>${s.id}</td><td><span class="badge">${s.channel}</span></td><td>${client.name}</td><td>${s.branch}</td><td>${s.destination}</td><td><select data-shipment-status="${s.id}"><option ${s.status === 'Pendiente' ? 'selected' : ''}>Pendiente</option><option ${s.status === 'En Ruta' ? 'selected' : ''}>En Ruta</option><option ${s.status === 'Entregado' ? 'selected' : ''}>Entregado</option></select></td><td><button class="ghost" data-view-shipment="${s.id}">Ver</button></td></tr>`;
+  }).join('');
+}
+
+function renderAccess() {
+  document.getElementById('employeeRows').innerHTML = state.employees.map(e => `<tr><td>${e.name}</td><td>${e.email}</td><td>${e.role}</td><td>${e.branch}</td><td><span class="status ${e.active ? 'ok' : 'bad'}">${e.active ? 'Activo' : 'Inactivo'}</span></td><td><button class="ghost" data-toggle-employee="${e.id}">${e.active ? 'Desactivar' : 'Activar'}</button></td></tr>`).join('');
+}
+
+function renderCut() {
+  const result = state.cutResult || calculateCut();
+  document.getElementById('cutCards').innerHTML = CHANNELS.map(c => `<div class="kpi"><span>${c}</span><strong>${money(result[c]?.total || 0)}</strong></div>`).join('');
+  document.getElementById('cutRows').innerHTML = CHANNELS.map(c => {
+    const row = result[c] || { count: 0, subtotal: 0, tax: 0, total: 0 };
+    return `<tr><td>${c}</td><td>${row.count}</td><td>${money(row.subtotal)}</td><td>${money(row.tax)}</td><td>${money(row.total)}</td></tr>`;
+  }).join('');
+}
+
+function renderLogs() {
+  document.getElementById('logRows').innerHTML = state.logs.map(l => `<tr><td>${l.date}</td><td>${l.role}</td><td><span class="badge">${l.channel}</span></td><td>${l.module}</td><td>${l.action}</td><td>${l.detail}</td></tr>`).join('');
+}
+
+function calculateInvoicePreview() {
+  const amount = Number(document.getElementById('invoiceAmount')?.value || 0);
+  const tax = amount * .16;
+  const total = amount + tax;
+  const sub = document.getElementById('invoiceSubtotal');
+  if (!sub) return;
+  sub.textContent = money(amount);
+  document.getElementById('invoiceTax').textContent = money(tax);
+  document.getElementById('invoiceTotal').textContent = money(total);
+}
+
+function processSale(channel, clientId, items, branch) {
+  let total = 0;
+  items.forEach(item => {
+    const product = byId(state.products, item.productId);
+    if (!product || product.stock < item.qty) throw new Error(`Stock insuficiente para ${product?.name || item.productId}`);
+    total += product.price * item.qty;
+  });
+  items.forEach(item => byId(state.products, item.productId).stock -= item.qty);
+  const sale = { id: nextId('S', state.sales), date: new Date().toISOString().slice(0, 10), channel, clientId, branch, total, tax: total * .16 / 1.16, items: items.map(item => ({ ...item, price: byId(state.products, item.productId).price })) };
+  state.sales.push(sale);
+  const client = byId(state.clients, clientId);
+  client.purchases += 1;
+  client.total += total;
+  const invoice = createInvoiceFromSale(sale, 'Facturación automática de energía Monsters Inc.');
+  if (channel !== 'Punto Físico') createShipment(sale);
+  addLog(channel, 'Ventas', 'Despacho de energía', `Venta ${sale.id} por ${money(total)}. Factura ${invoice.id}.`);
+  return sale;
+}
+
+function createInvoiceFromSale(sale, concept) {
+  const subtotal = sale.total / 1.16;
+  const invoice = { id: nextId('F', state.invoices), saleId: sale.id, clientId: sale.clientId, channel: sale.channel, concept, subtotal, tax: sale.total - subtotal, total: sale.total, status: 'Emitida', date: sale.date };
+  state.invoices.unshift(invoice);
+  return invoice;
+}
+
+function createShipment(sale) {
+  const client = byId(state.clients, sale.clientId);
+  const shipment = { id: nextId('ENV', state.shipments), saleId: sale.id, channel: sale.channel, clientId: sale.clientId, branch: sale.branch, destination: sale.channel === 'Online' ? 'Ruta web asignada a puerta humana' : 'Muelle corporativo Monstrópolis', status: 'Pendiente', eta: futureDays(2) };
+  state.shipments.unshift(shipment);
+  addLog(sale.channel, 'Envíos', 'Envío generado', `${shipment.id} para ${client.name}.`);
+}
+
+function nextId(prefix, list) {
+  return prefix + String(list.length + 1).padStart(3, '0');
+}
+
+function calculateCut() {
+  const result = {};
+  CHANNELS.forEach(c => result[c] = { count: 0, subtotal: 0, tax: 0, total: 0 });
+  state.sales.forEach(s => {
+    result[s.channel].count += 1;
+    result[s.channel].total += s.total;
+    result[s.channel].tax += s.tax;
+    result[s.channel].subtotal += s.total - s.tax;
+  });
+  return result;
+}
+
+function createCsv(rows, columns) {
+  return [columns.map(c => c.label).join(','), ...rows.map(row => columns.map(c => `"${String(row[c.key] ?? '').replaceAll('"', '""')}"`).join(','))].join('\n');
+}
+
+function download(name, content, type = 'text/plain;charset=utf-8') {
+  const blob = new Blob([content], { type });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'bitacora-monsterinc.csv';
+  a.download = name;
   a.click();
   URL.revokeObjectURL(url);
 }
 
-function cerrarModal(idModal) {
-  document.getElementById(idModal).style.display = 'none';
+function openDocument(title, html) {
+  state.lastDocument = html;
+  document.getElementById('modalTitle').textContent = title;
+  document.getElementById('modalBody').innerHTML = `<div class="doc">${html}</div>`;
+  document.getElementById('modal').classList.add('open');
 }
 
-document.addEventListener('click', event => {
-  if (event.target.classList.contains('modal-overlay')) event.target.style.display = 'none';
+function printHtml(title, html) {
+  const w = window.open('', '_blank');
+  w.document.write(`<title>${title}</title><body style="font-family:Arial;padding:24px">${html}<script>print()<\/script></body>`);
+  w.document.close();
+}
+
+function ticketHtml(sale) {
+  const client = byId(state.clients, sale.clientId);
+  const lines = sale.items.map(i => {
+    const product = byId(state.products, i.productId);
+    return `<div class="doc-row"><span>${product.name} x ${i.qty}</span><strong>${money(i.qty * i.price)}</strong></div>`;
+  }).join('');
+  return `<h3>Ticket de Energía Monsters Inc.</h3><p><strong>Venta:</strong> ${sale.id}</p><p><strong>Cliente:</strong> ${client.name}</p><p><strong>Canal:</strong> ${sale.channel}</p>${lines}<div class="doc-row"><span>Total</span><strong>${money(sale.total)}</strong></div>`;
+}
+
+function cfdiHtml(invoice) {
+  const client = byId(state.clients, invoice.clientId);
+  return `<h3>CFDI Fiscal de Energía</h3><p><strong>Folio:</strong> ${invoice.id}</p><p><strong>Cliente:</strong> ${client.name}</p><p><strong>Canal:</strong> ${invoice.channel}</p><p><strong>Concepto:</strong> ${invoice.concept}</p><div class="doc-row"><span>Subtotal</span><strong>${money(invoice.subtotal)}</strong></div><div class="doc-row"><span>IVA 16%</span><strong>${money(invoice.tax)}</strong></div><div class="doc-row"><span>Total</span><strong>${money(invoice.total)}</strong></div><pre>&lt;cfdi folio="${invoice.id}" total="${invoice.total.toFixed(2)}" cliente="${client.name}" /&gt;</pre>`;
+}
+
+function bindDynamicButtons() {
+  document.querySelectorAll('[data-screen]').forEach(btn => btn.onclick = () => {
+    const screen = btn.dataset.screen;
+    if (!requirePermission(screen)) return;
+    setState(s => s.activeScreen = screen);
+  });
+  document.querySelectorAll('[data-stock-filter]').forEach(btn => btn.onclick = () => setState(s => s.stockFilter = btn.dataset.stockFilter));
+  document.querySelectorAll('[data-filter-client]').forEach(btn => btn.onclick = () => setState(s => s.clientFilter = btn.dataset.filterClient));
+  document.querySelectorAll('[data-remove-cart]').forEach(btn => btn.onclick = () => setState(s => s.cart = s.cart.filter(i => i.productId !== btn.dataset.removeCart)));
+  document.querySelectorAll('[data-delete-client]').forEach(btn => btn.onclick = () => {
+    if (!requirePermission('clients')) return;
+    setState(s => {
+      const c = byId(s.clients, btn.dataset.deleteClient);
+      s.clients = s.clients.filter(x => x.id !== c.id);
+      addLog(c.channel, 'Clientes', 'Cliente eliminado', c.name);
+    });
+  });
+  document.querySelectorAll('[data-edit-product]').forEach(btn => btn.onclick = () => editProduct(btn.dataset.editProduct));
+  document.querySelectorAll('[data-download-cfdi]').forEach(btn => btn.onclick = () => {
+    const invoice = byId(state.invoices, btn.dataset.downloadCfdi);
+    const html = cfdiHtml(invoice);
+    openDocument(`CFDI ${invoice.id}`, html);
+    download(`${invoice.id}-cfdi.xml`, html, 'application/xml;charset=utf-8');
+  });
+  document.querySelectorAll('[data-shipment-status]').forEach(sel => sel.onchange = () => {
+    const shipment = byId(state.shipments, sel.dataset.shipmentStatus);
+    setState(s => {
+      shipment.status = sel.value;
+      addLog(shipment.channel, 'Envíos', 'Estado actualizado', `${shipment.id} cambió a ${sel.value}`);
+    });
+  });
+  document.querySelectorAll('[data-view-shipment]').forEach(btn => btn.onclick = () => {
+    const shipment = byId(state.shipments, btn.dataset.viewShipment);
+    const client = byId(state.clients, shipment.clientId);
+    openDocument(`Envío ${shipment.id}`, `<h3>Guía ${shipment.id}</h3><p><strong>Cliente:</strong> ${client.name}</p><p><strong>Canal:</strong> ${shipment.channel}</p><p><strong>Estado:</strong> ${shipment.status}</p><p><strong>Destino:</strong> ${shipment.destination}</p><p><strong>ETA:</strong> ${shipment.eta}</p>`);
+  });
+}
+
+function editProduct(id) {
+  if (!requirePermission('inventory')) return;
+  const p = byId(state.products, id);
+  openDocument('Editar producto', `<h3>${p.sku}</h3><label>Nombre<input id="editName" value="${p.name}"></label><label>Precio<input id="editPrice" type="number" value="${p.price}"></label><label>Stock<input id="editStock" type="number" value="${p.stock}"></label><button onclick="saveProductEdit('${p.id}')">Guardar cambios</button>`);
+}
+
+window.saveProductEdit = id => {
+  setState(s => {
+    const p = byId(s.products, id);
+    p.name = document.getElementById('editName').value;
+    p.price = Number(document.getElementById('editPrice').value);
+    p.stock = Number(document.getElementById('editStock').value);
+    addLog('General', 'Inventario', 'Producto editado', `${p.sku} actualizado`);
+  });
+  document.getElementById('modal').classList.remove('open');
+};
+
+function wireStaticEvents() {
+  document.getElementById('currentRole').onchange = e => setState(s => {
+    s.currentRole = e.target.value;
+    addLog('General', 'Seguridad', 'Cambio de rol', `Rol activo: ${e.target.value}`);
+  });
+  document.getElementById('resetState').onclick = () => {
+    localStorage.removeItem('monsters-erp-state-v3');
+    state = initialState();
+    render();
+  };
+  document.getElementById('addToCart').onclick = () => {
+    if (!requirePermission('pos')) return;
+    const productId = document.getElementById('posProduct').value;
+    const qty = Math.max(1, Number(document.getElementById('posQty').value));
+    const product = byId(state.products, productId);
+    if (!product || product.stock < qty) return alert('Inventario insuficiente.');
+    setState(s => {
+      const item = s.cart.find(i => i.productId === productId);
+      if (item) item.qty += qty;
+      else s.cart.push({ productId, qty });
+    });
+  };
+  document.getElementById('clearCart').onclick = () => setState(s => s.cart = []);
+  document.getElementById('processPosSale').onclick = () => {
+    if (!requirePermission('pos')) return;
+    if (!state.cart.length) return alert('Agrega conceptos al ticket.');
+    setState(s => {
+      const sale = processSale('Punto Físico', document.getElementById('posClient').value, s.cart, 'Planta Susto Matriz');
+      s.cart = [];
+      const html = ticketHtml(sale);
+      s.lastDocument = html;
+      openDocument(`Ticket ${sale.id}`, html);
+      printHtml(`Ticket ${sale.id}`, html);
+    });
+  };
+  document.getElementById('runOnlineOrder').onclick = () => simulateChannelSale('Online');
+  document.getElementById('runCorporateOrder').onclick = () => simulateChannelSale('Corporaciones');
+  document.getElementById('simulateOnline').onclick = () => simulateChannelSale('Online');
+  document.getElementById('simulateCorporate').onclick = () => simulateChannelSale('Corporaciones');
+  document.getElementById('createClient').onclick = createClient;
+  document.getElementById('createProduct').onclick = createProduct;
+  document.getElementById('createEmployee').onclick = createEmployee;
+  document.getElementById('saveRoleChanges').onclick = saveRoleChanges;
+  document.getElementById('createRole').onclick = createRole;
+  document.getElementById('issueInvoice').onclick = issueInvoice;
+  document.getElementById('invoiceAmount').oninput = calculateInvoicePreview;
+  document.getElementById('invoiceSearch').oninput = renderBilling;
+  document.getElementById('invoiceFilter').onchange = e => setState(s => s.invoiceFilter = e.target.value);
+  document.getElementById('processCut').onclick = () => setState(s => {
+    s.cutResult = calculateCut();
+    addLog('General', 'Corte', 'Corte procesado', document.getElementById('cutPeriod').value);
+  });
+  document.getElementById('downloadCut').onclick = () => download('corte-caja-monsters.csv', cutCsv());
+  document.getElementById('exportAll').onclick = () => download('erp-monsters-excel.xls', fullCsv(), 'application/vnd.ms-excel;charset=utf-8');
+  document.getElementById('exportClients').onclick = () => download('clientes-monsters.csv', createCsv(state.clients, [{ key: 'name', label: 'Cliente' }, { key: 'type', label: 'Tipo' }, { key: 'channel', label: 'Canal' }, { key: 'total', label: 'Total' }]));
+  document.getElementById('exportInventory').onclick = () => download('inventario-monsters.csv', createCsv(state.products, [{ key: 'sku', label: 'SKU' }, { key: 'name', label: 'Producto' }, { key: 'stock', label: 'Stock' }, { key: 'price', label: 'Precio' }]));
+  document.getElementById('exportInvoices').onclick = () => download('facturas-monsters.csv', createCsv(state.invoices, [{ key: 'id', label: 'Folio' }, { key: 'channel', label: 'Canal' }, { key: 'total', label: 'Total' }, { key: 'status', label: 'Estado' }]));
+  document.getElementById('exportShipments').onclick = () => download('envios-monsters.csv', createCsv(state.shipments, [{ key: 'id', label: 'Guia' }, { key: 'channel', label: 'Canal' }, { key: 'status', label: 'Estado' }, { key: 'eta', label: 'ETA' }]));
+  document.getElementById('exportEmployees').onclick = () => download('empleados-monsters.csv', createCsv(state.employees, [{ key: 'name', label: 'Nombre' }, { key: 'email', label: 'Correo' }, { key: 'role', label: 'Rol' }, { key: 'active', label: 'Activo' }]));
+  document.getElementById('exportLogs').onclick = () => download('bitacora-planta.csv', createCsv(state.logs, [{ key: 'date', label: 'Fecha' }, { key: 'role', label: 'Rol' }, { key: 'channel', label: 'Canal' }, { key: 'action', label: 'Accion' }, { key: 'detail', label: 'Detalle' }]));
+  document.getElementById('closeModal').onclick = () => document.getElementById('modal').classList.remove('open');
+  document.getElementById('printModal').onclick = () => printHtml(document.getElementById('modalTitle').textContent, document.getElementById('modalBody').innerHTML);
+  document.getElementById('downloadModal').onclick = () => download('documento-monsters.html', document.getElementById('modalBody').innerHTML, 'text/html;charset=utf-8');
+  document.querySelectorAll('[data-export]').forEach(btn => btn.onclick = () => download(`${btn.dataset.export}-monsters.csv`, fullCsv()));
+}
+
+function simulateChannelSale(channel) {
+  if (!requirePermission('pos')) return;
+  const client = state.clients.find(c => c.channel === channel) || state.clients[0];
+  const product = channel === 'Corporaciones' ? state.products.find(p => p.category === 'Corporativo' && p.stock > 0) : state.products.find(p => p.stock > 0);
+  if (!product) return alert('No hay inventario disponible.');
+  setState(s => {
+    const qty = channel === 'Corporaciones' ? 1 : 2;
+    const sale = processSale(channel, client.id, [{ productId: product.id, qty }], product.branch);
+    const html = ticketHtml(sale);
+    s.lastDocument = html;
+    openDocument(`Operación ${sale.id}`, html);
+  });
+}
+
+function createClient() {
+  if (!requirePermission('clients')) return;
+  const name = document.getElementById('clientName').value.trim();
+  const email = document.getElementById('clientEmail').value.trim();
+  if (!name || !email.includes('@')) return alert('Captura nombre y correo válido.');
+  setState(s => {
+    const client = { id: nextId('C', s.clients), name, email, type: document.getElementById('clientType').value, channel: document.getElementById('clientChannel').value, branch: document.getElementById('clientBranch').value, purchases: 0, total: 0 };
+    s.clients.push(client);
+    addLog(client.channel, 'Clientes', 'Cliente registrado', client.name);
+  });
+}
+
+function createProduct() {
+  if (!requirePermission('inventory')) return;
+  const name = document.getElementById('productName').value.trim();
+  const sku = document.getElementById('productSku').value.trim().toUpperCase();
+  if (!name || !sku) return alert('Nombre y SKU son obligatorios.');
+  if (state.products.some(p => p.sku === sku || p.name.toLowerCase() === name.toLowerCase())) return alert('El producto ya existe');
+  setState(s => {
+    const product = { id: nextId('P', s.products), sku, name, category: document.getElementById('productCategory').value || 'Energía', branch: 'Planta Susto Matriz', stock: Number(document.getElementById('productStock').value), price: Number(document.getElementById('productPrice').value) };
+    s.products.push(product);
+    addLog('General', 'Inventario', 'Producto registrado', `${product.sku} ${product.name}`);
+  });
+}
+
+function createEmployee() {
+  if (!requirePermission('access')) return;
+  const name = document.getElementById('employeeName').value.trim();
+  const email = document.getElementById('employeeEmail').value.trim();
+  if (!name || !email.includes('@')) return alert('Captura empleado y correo válido.');
+  setState(s => {
+    const employee = { id: nextId('E', s.employees), name, email, role: document.getElementById('employeeRole').value, branch: document.getElementById('employeeBranch').value, active: true };
+    s.employees.push(employee);
+    addLog('General', 'Seguridad', 'Empleado registrado', `${employee.name} como ${employee.role}`);
+  });
+}
+
+function saveRoleChanges() {
+  if (!requirePermission('access')) return;
+  const role = document.getElementById('roleEditor').value;
+  setState(s => {
+    s.roles[role] = [...document.querySelectorAll('[data-permission]:checked')].map(i => i.dataset.permission);
+    addLog('General', 'Seguridad', 'Permisos actualizados', role);
+  });
+}
+
+function createRole() {
+  if (!requirePermission('access')) return;
+  const name = document.getElementById('newRoleName').value.trim();
+  if (!name) return alert('Captura el nombre del rol.');
+  if (state.roles[name]) return alert('El rol ya existe.');
+  setState(s => {
+    s.roles[name] = [...document.querySelectorAll('[data-permission]:checked')].map(i => i.dataset.permission);
+    addLog('General', 'Seguridad', 'Rol creado', name);
+  });
+}
+
+function issueInvoice() {
+  if (!requirePermission('billing')) return;
+  const clientId = document.getElementById('invoiceClient').value;
+  const channel = document.getElementById('invoiceChannel').value;
+  const concept = document.getElementById('invoiceConcept').value.trim() || 'Suministro de energía Monsters Inc.';
+  const amount = Number(document.getElementById('invoiceAmount').value);
+  if (amount <= 0) return alert('Importe inválido.');
+  setState(s => {
+    const invoice = { id: nextId('F', s.invoices), saleId: 'MANUAL', clientId, channel, concept, subtotal: amount, tax: amount * .16, total: amount * 1.16, status: 'Emitida', date: new Date().toISOString().slice(0, 10) };
+    s.invoices.unshift(invoice);
+    addLog(channel, 'Facturación', 'CFDI emitido', `${invoice.id} por ${money(invoice.total)}`);
+    openDocument(`CFDI ${invoice.id}`, cfdiHtml(invoice));
+  });
+}
+
+document.addEventListener('click', e => {
+  if (e.target.matches('[data-toggle-employee]')) {
+    if (!requirePermission('access')) return;
+    setState(s => {
+      const employee = byId(s.employees, e.target.dataset.toggleEmployee);
+      employee.active = !employee.active;
+      addLog('General', 'Seguridad', employee.active ? 'Empleado activado' : 'Empleado desactivado', employee.name);
+    });
+  }
 });
 
-document.addEventListener('DOMContentLoaded', cargarDatosBackend);
+function fullCsv() {
+  return [
+    'VENTAS',
+    createCsv(state.sales, [{ key: 'id', label: 'Venta' }, { key: 'date', label: 'Fecha' }, { key: 'channel', label: 'Canal' }, { key: 'total', label: 'Total' }]),
+    '',
+    'INVENTARIO',
+    createCsv(state.products, [{ key: 'sku', label: 'SKU' }, { key: 'name', label: 'Producto' }, { key: 'stock', label: 'Stock' }, { key: 'price', label: 'Precio' }])
+  ].join('\n');
+}
+
+function cutCsv() {
+  const result = state.cutResult || calculateCut();
+  return ['Canal,Ventas,Subtotal,IVA,Total', ...CHANNELS.map(c => `${c},${result[c].count},${result[c].subtotal.toFixed(2)},${result[c].tax.toFixed(2)},${result[c].total.toFixed(2)}`)].join('\n');
+}
+
+wireStaticEvents();
+render();
