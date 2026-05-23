@@ -8,7 +8,9 @@ La tienda `tienda-de-Monsters-Inc` registra operaciones de clientes, ventas en l
 
 El ERP `ERP-Monsters-Inc` administra empleados, roles, sucursales, regiones, inventario, promociones, precios por canal y seguimiento operativo.
 
-Ambos sistemas deben usar el mismo archivo `conexion.php` o una copia equivalente que conecte a `sistema_ventas`. De esta forma, una venta realizada desde la tienda queda guardada en las tablas `VENTA` y `DETALLE_VENTA`, mientras que el ERP puede consultar esa misma informacion para facturacion, inventario y seguimiento.
+Ambos sistemas usan wrappers locales de `conexion.php` que apuntan al archivo central del repositorio. De esta forma, una venta realizada desde la tienda queda guardada en las tablas `VENTA` y `DETALLE_VENTA`, mientras que el ERP consulta esa misma informacion para facturacion, inventario y seguimiento.
+
+La tienda consume el canal `Linea`. El ERP consume el canal `Fisica` para punto de venta y puede registrar productos con precios para `Linea`, `Fisica` y `Corporativo`.
 
 ## Orden correcto para ejecutar en XAMPP
 
@@ -82,3 +84,23 @@ Para validar la integracion:
 7. Revisar en el ERP el inventario de la misma sucursal.
 
 La tienda y el ERP no deben crear bases separadas. Todo debe consultar y modificar `sistema_ventas`.
+
+## Endpoints locales
+
+La tienda usa:
+
+```text
+tienda-de-Monsters-Inc/api.php?action=get_products
+tienda-de-Monsters-Inc/api.php?action=create_sale
+tienda-de-Monsters-Inc/api.php?action=get_sales
+tienda-de-Monsters-Inc/api.php?action=update_sale
+tienda-de-Monsters-Inc/api.php?action=delete_sale
+```
+
+El ERP usa:
+
+```text
+ERP-Monsters-Inc/api.php?action=initial_data
+ERP-Monsters-Inc/api.php?action=create_product
+ERP-Monsters-Inc/api.php?action=create_sale
+```
