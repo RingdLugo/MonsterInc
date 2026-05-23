@@ -7,7 +7,27 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <aside class="sidebar">
+  <section class="login-view" id="loginView">
+    <form class="login-card" id="loginForm">
+      <div class="brand login-brand">
+        <div class="brand-mark">MI</div>
+        <div>
+          <strong>Monsters Inc. ERP</strong>
+          <span>Acceso interno por rol</span>
+        </div>
+      </div>
+      <label>Correo
+        <input id="loginEmail" type="email" value="admin@monsters.com" autocomplete="username" required>
+      </label>
+      <label>Contraseña
+        <input id="loginPassword" type="password" value="Admin123*" autocomplete="current-password" required>
+      </label>
+      <button type="submit">Iniciar sesion</button>
+      <p class="muted" id="loginMessage">Usa las credenciales de empleados registradas en la base de datos.</p>
+    </form>
+  </section>
+
+  <aside class="sidebar app-shell">
     <div class="brand">
       <div class="brand-mark">MI</div>
       <div>
@@ -18,11 +38,16 @@
     <label class="role-picker">Rol actual
       <select id="currentRole"></select>
     </label>
+    <div class="session-box">
+      <span>Sesion iniciada</span>
+      <strong id="sessionUser">Sin usuario</strong>
+    </div>
     <nav id="navigation"></nav>
     <button class="ghost full" id="resetState">Recargar datos de BD</button>
+    <button class="ghost full danger-text" id="logoutButton">Cerrar sesion</button>
   </aside>
 
-  <main class="app">
+  <main class="app app-shell">
     <header class="topbar">
       <div>
         <p class="eyebrow">Operacion central Monster Inc.</p>

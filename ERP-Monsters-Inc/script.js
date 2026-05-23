@@ -30,6 +30,7 @@ const state = {
   clientFilter: 'all',
   invoiceFilter: 'Todos',
   cart: [],
+  session: null,
   rolePermissions: {},
   data: {}
 };
@@ -51,6 +52,31 @@ async function loadData() {
   state.data = await api('dashboard_data');
   seedRolePermissions();
   render();
+}
+
+function loadSession() {
+  try {
+    state.session = JSON.parse(sessionStorage.getItem('monsterinc_erp_session') || 'null');
+  } catch {
+    state.session = null;
+  }
+  document.body.classList.toggle('authenticated', Boolean(state.session));
+}
+
+function saveSession(session) {
+  state.session = session;
+  sessionStorage.setItem('monsterinc_erp_session', JSON.stringify(session));
+  document.body.classList.add('authenticated');
+}
+
+function clearSession() {
+  state.session = null;
+  sessionStorage.removeItem('monsterinc_erp_session');
+  state.screen = 'dashboard';
+  state.cart = [];
+  document.body.classList.remove('authenticated');
+  document.getElementById('loginPassword').value = '';
+  document.getElementById('loginMessage').textContent = 'Sesion cerrada. Ingresa con otro empleado para cambiar privilegios.';
 }
 
 function seedRolePermissions() {
@@ -79,7 +105,7 @@ function normalizeRole(name) {
 }
 
 function currentRole() {
-  return document.getElementById('currentRole')?.value || 'Administrador';
+  return state.session?.rol || document.getElementById('currentRole')?.value || 'Administrador';
 }
 
 function rolePermissions(roleName = currentRole()) {
@@ -171,6 +197,17 @@ function renderSelectors() {
   const roleNames = [...new Set(['Administrador', 'Gerente', 'Cajero', 'Gestor de Inventario', 'Facturacion', 'Logistica', ...roles.map(role => role.nombre)])];
 
   setOptions('currentRole', roleNames.map(role => [role, role]));
+  const roleSelect = document.getElementById('currentRole');
+  if (state.session?.rol && roleSelect) {
+    if (![...roleSelect.options].some(option => option.value === state.session.rol)) {
+      roleSelect.insertAdjacentHTML('beforeend', `<option value="${esc(state.session.rol)}">${esc(state.session.rol)}</option>`);
+    }
+    roleSelect.value = state.session.rol;
+    roleSelect.disabled = true;
+  }
+  if (document.getElementById('sessionUser')) {
+    document.getElementById('sessionUser').textContent = state.session ? `${state.session.nombre} - ${state.session.rol}` : 'Sin usuario';
+  }
   setOptions('clientBranch', branches.map(branch => [branch.id, branch.nombre]));
   setOptions('employeeBranch', branches.map(branch => [branch.id, branch.nombre]));
   setOptions('employeeRole', roles.map(role => [role.id, role.nombre]));
@@ -559,6 +596,8 @@ function exportTable(name, rows) {
 }
 
 function wire() {
+  document.getElementById('loginForm').onsubmit = login;
+  document.getElementById('logoutButton').onclick = clearSession;
   document.getElementById('addToCart').onclick = addToCart;
   document.getElementById('clearCart').onclick = () => { state.cart = []; renderPOS(); };
   document.getElementById('processPosSale').onclick = () => processSale('Punto Fisico');
@@ -598,6 +637,32 @@ function wire() {
   document.getElementById('currentRole').onchange = () => render();
 }
 
+async function login(event) {
+  event.preventDefault();
+  const message = document.getElementById('loginMessage');
+  message.textContent = 'Validando credenciales...';
+  try {
+    const data = await api('login', {
+      method: 'POST',
+      body: JSON.stringify({
+        correo: document.getElementById('loginEmail').value,
+        password: document.getElementById('loginPassword').value
+      })
+    });
+    saveSession({
+      id: data.empleado.id,
+      nombre: data.empleado.nombre,
+      correo: data.empleado.correo,
+      rol: normalizeRole(data.empleado.rol),
+      rolBD: data.empleado.rol,
+      sucursal: data.empleado.sucursal
+    });
+    await loadData();
+  } catch (error) {
+    message.textContent = error.message;
+  }
+}
+
 async function createRole() {
   if (!guard('Gestionar accesos')) return;
   const name = document.getElementById('newRoleName').value.trim();
@@ -621,5 +686,6 @@ async function saveRolePermissions() {
 
 document.addEventListener('DOMContentLoaded', async () => {
   wire();
-  await loadData();
+  loadSession();
+  if (state.session) await loadData();
 });

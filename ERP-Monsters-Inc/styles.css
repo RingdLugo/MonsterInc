@@ -43,6 +43,48 @@ button.ghost:hover { background: #dfe9f4; }
 button.secondary { background: var(--purple); }
 button.full { width: 100%; margin-top: 10px; }
 button.danger { background: var(--red); }
+button.danger-text {
+  color: var(--red);
+}
+
+.login-view {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: linear-gradient(135deg, #132033 0%, #2364aa 52%, #f4f7fb 52%);
+}
+.login-card {
+  width: min(420px, 100%);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  padding: 24px;
+  display: grid;
+  gap: 14px;
+}
+.login-brand {
+  color: var(--ink);
+  border-bottom-color: var(--line);
+  margin-bottom: 4px;
+}
+.login-card label {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-weight: 700;
+}
+.login-card input {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 11px;
+  color: var(--ink);
+}
+.app-shell { display: none; }
+body.authenticated .app-shell { display: flex; }
+body.authenticated main.app { display: block; }
+body.authenticated .login-view { display: none; }
 
 .sidebar {
   position: fixed;
@@ -87,6 +129,27 @@ button.danger { background: var(--red); }
   color: white;
   padding: 10px;
   border-radius: 7px;
+}
+.role-picker select:disabled {
+  opacity: .75;
+  cursor: not-allowed;
+}
+.session-box {
+  background: rgba(255,255,255,.08);
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 8px;
+  padding: 12px;
+}
+.session-box span {
+  display: block;
+  color: #b9c6d8;
+  font-size: 12px;
+  margin-bottom: 5px;
+}
+.session-box strong {
+  display: block;
+  color: white;
+  font-size: 14px;
 }
 
 .nav-button {

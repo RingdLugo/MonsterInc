@@ -128,17 +128,17 @@ Los productos iniciales son articulos comerciales reales de ejemplo:
 - Silla ergonomica Herman Miller Sayl.
 - Cafetera Nespresso Vertuo Pop.
 
-## Flujo energetico del ERP
+## Flujo operativo del ERP
 
-La version funcional del ERP modela el negocio como una planta de energia de Monsters Inc.:
+La version funcional del ERP modela una operacion comercial integrada para Monster Inc.:
 
-- `Online`: pedidos web de recarga de tanques asignados al centro de recargas.
-- `Punto Fisico`: despacho directo de energia en mostrador de planta o sucursal.
-- `Corporaciones`: contratos B2B para industrias y clientes de alto volumen.
+- `Online`: pedidos web asignados al centro de distribucion.
+- `Punto Fisico`: venta directa en sucursal.
+- `Corporaciones`: contratos B2B para clientes de alto volumen.
 
 Cada operacion mueve el estado completo de la aplicacion:
 
-- descuenta inventario de tanques o recargas;
+- descuenta inventario de articulos reales;
 - genera venta;
 - crea factura/CFDI;
 - genera envio cuando el canal lo requiere;
@@ -150,6 +150,8 @@ La regla operativa es que no haya botones decorativos: cada boton modifica datos
 ## Credenciales del ERP
 
 El ERP valida usuarios contra la tabla `EMPLEADO`. Las contrasenas se guardan hasheadas con `password_hash`.
+
+Al abrir el ERP se muestra la pantalla de inicio de sesion. Despues de entrar, el dashboard queda asociado al rol del empleado y aparece el boton `Cerrar sesion` para salir y permitir que otro usuario entre con sus propios privilegios.
 
 Usuarios disponibles:
 
@@ -166,6 +168,16 @@ Gerente123*
 ```text
 vendedor@monsters.com
 Vendedor123*
+```
+
+```text
+almacen@monsters.com
+Almacen123*
+```
+
+```text
+contador@monsters.com
+Contador123*
 ```
 
 ## Rutas locales
