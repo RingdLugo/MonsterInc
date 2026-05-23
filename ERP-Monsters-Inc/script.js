@@ -29,15 +29,33 @@ async function cargarDatosBackend() {
   }
 }
 
-function iniciarSesion(event) {
+async function iniciarSesion(event) {
   event.preventDefault();
   const correo = document.getElementById('login-correo').value;
   const pass = document.getElementById('login-pass').value;
 
-  if (correo !== '' && pass !== '') {
+  try {
+    const data = await apiRequest('login', {
+      method: 'POST',
+      body: JSON.stringify({ correo, password: pass })
+    });
+
+    const nombreUser = document.querySelector('.nombre-user');
+    const correoUser = document.querySelector('.correo-user');
+
+    if (nombreUser) {
+      nombreUser.textContent = `${data.empleado.nombre} - ${data.empleado.rol}`;
+    }
+
+    if (correoUser) {
+      correoUser.textContent = `Sucursal: ${data.empleado.sucursal}`;
+    }
+
     document.getElementById('pantalla-login').style.display = 'none';
     document.getElementById('app-dashboard').style.display = 'flex';
-    cargarDatosBackend();
+    await cargarDatosBackend();
+  } catch (error) {
+    alert(`No se pudo iniciar sesion: ${error.message}`);
   }
 }
 

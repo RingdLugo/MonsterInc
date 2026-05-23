@@ -30,6 +30,8 @@ function ensureCatalogs(PDO $pdo): void
         VALUES (1, 'Sucursal Online', 1, 'Plataforma en linea Monster Inc.', TRUE)
     ");
 
+    ensureEmployees($pdo);
+
     $products = [
         ['Puerta estandar de sustos', 'PRD-001', 900.00, 'Puertas', 1500.00, 20],
         ['Puerta premium peluda', 'PRD-002', 1800.00, 'Puertas', 3200.00, 12],
@@ -71,6 +73,50 @@ function ensureCatalogs(PDO $pdo): void
 
         $stockStmt->execute([$productId, $stock]);
     }
+}
+
+function ensureRole(PDO $pdo, string $roleName): int
+{
+    $stmt = $pdo->prepare('SELECT id_rol FROM ROL WHERE nombre_rol = ? LIMIT 1');
+    $stmt->execute([$roleName]);
+    $roleId = $stmt->fetchColumn();
+
+    if ($roleId !== false) {
+        return (int)$roleId;
+    }
+
+    $stmt = $pdo->prepare('INSERT INTO ROL (nombre_rol) VALUES (?)');
+    $stmt->execute([$roleName]);
+
+    return (int)$pdo->lastInsertId();
+}
+
+function ensureEmployee(PDO $pdo, string $name, string $email, string $plainPassword, int $roleId, ?int $branchId, ?int $regionId): void
+{
+    $stmt = $pdo->prepare('SELECT id_empleado FROM EMPLEADO WHERE correo = ? LIMIT 1');
+    $stmt->execute([$email]);
+
+    if ($stmt->fetchColumn() !== false) {
+        return;
+    }
+
+    $passwordHash = password_hash($plainPassword, PASSWORD_DEFAULT);
+    $stmt = $pdo->prepare("
+        INSERT INTO EMPLEADO (nombre, correo, `contraseña`, id_rol, id_sucursal, id_region, activo)
+        VALUES (?, ?, ?, ?, ?, ?, TRUE)
+    ");
+    $stmt->execute([$name, $email, $passwordHash, $roleId, $branchId, $regionId]);
+}
+
+function ensureEmployees(PDO $pdo): void
+{
+    $adminRoleId = ensureRole($pdo, 'Administrador');
+    $managerRoleId = ensureRole($pdo, 'Gerente de sucursal');
+    $sellerRoleId = ensureRole($pdo, 'Vendedor');
+
+    ensureEmployee($pdo, 'Admin General', 'admin@monsters.com', 'Admin123*', $adminRoleId, 1, 1);
+    ensureEmployee($pdo, 'Celia Mae', 'gerente@monsters.com', 'Gerente123*', $managerRoleId, 1, 1);
+    ensureEmployee($pdo, 'Mike Wazowski', 'vendedor@monsters.com', 'Vendedor123*', $sellerRoleId, 1, null);
 }
 
 function currentPrice(PDO $pdo, int $productId, string $channel): float
@@ -117,6 +163,56 @@ try {
     ensureCatalogs($pdo);
 
     switch ($action) {
+        case 'login':
+            if ($requestMethod !== 'POST') {
+                response(['error' => 'Metodo no permitido.'], 405);
+            }
+
+            $input = json_decode(file_get_contents('php://input'), true);
+            $email = strtolower(trim($input['correo'] ?? ''));
+            $password = (string)($input['password'] ?? '');
+
+            if ($email === '' || $password === '') {
+                response(['error' => 'Correo y contraseña son requeridos.'], 400);
+            }
+
+            $stmt = $pdo->prepare("
+                SELECT
+                    e.id_empleado,
+                    e.nombre,
+                    e.correo,
+                    e.`contraseña` AS password_hash,
+                    e.activo,
+                    r.nombre_rol,
+                    s.nombre AS sucursal
+                FROM EMPLEADO e
+                INNER JOIN ROL r ON r.id_rol = e.id_rol
+                LEFT JOIN SUCURSAL s ON s.id_sucursal = e.id_sucursal
+                WHERE e.correo = ?
+                LIMIT 1
+            ");
+            $stmt->execute([$email]);
+            $employee = $stmt->fetch();
+
+            if (!$employee || !password_verify($password, $employee['password_hash'])) {
+                response(['error' => 'Correo o contraseña incorrectos.'], 401);
+            }
+
+            if (!(bool)$employee['activo']) {
+                response(['error' => 'El empleado esta inactivo.'], 403);
+            }
+
+            response([
+                'success' => true,
+                'empleado' => [
+                    'id' => (int)$employee['id_empleado'],
+                    'nombre' => $employee['nombre'],
+                    'correo' => $employee['correo'],
+                    'rol' => $employee['nombre_rol'],
+                    'sucursal' => $employee['sucursal'] ?? 'Sin sucursal asignada',
+                ],
+            ]);
+
         case 'initial_data':
             $products = $pdo->query("
                 SELECT
