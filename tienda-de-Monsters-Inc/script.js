@@ -1,182 +1,188 @@
-/* ============================================================
-   MONSTERS INC — Tienda Online · script.js completo y funcional
-   ============================================================ */
-
-/* ── Estado global ── */
 let PRODUCTS = [];
+let cart = [];
+let wishlist = new Set();
+
+const fmt = value => '$' + Number(value || 0).toLocaleString('es-MX', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2
+});
+const $ = id => document.getElementById(id);
+const qs = selector => document.querySelector(selector);
+const qsa = selector => [...document.querySelectorAll(selector)];
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+function showToast(message) {
+  const toast = $('toast');
+  const text = $('toast-msg');
+  if (!toast || !text) return;
+
+  text.textContent = message;
+  toast.classList.add('show');
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => toast.classList.remove('show'), 3000);
+}
+
+async function apiRequest(action, options = {}) {
+  const response = await fetch(`api.php?action=${action}`, {
+    headers: { 'Content-Type': 'application/json' },
+    ...options
+  });
+  const data = await response.json();
+
+  if (!response.ok || data.error) {
+    throw new Error(data.error || 'No fue posible completar la operacion.');
+  }
+
+  return data;
+}
 
 async function loadProductsFromDB() {
   try {
-    const response = await fetch('api.php?action=get_products');
-    const data = await response.json();
-    if (data.error) {
-      console.error('Error de la API de productos:', data.error);
-      return;
-    }
-    PRODUCTS = data;
+    PRODUCTS = await apiRequest('get_products');
+    populateSearchCategories();
+    renderProducts();
     initWishlistButtons();
-  } catch (err) {
-    console.error('Error al cargar productos de la base de datos:', err);
+  } catch (error) {
+    console.error(error);
+    showToast('No se pudo cargar el catalogo desde sistema_ventas');
   }
 }
 
-let cart     = [];
-let wishlist = new Set();
+function populateSearchCategories() {
+  const select = qs('.search-bar select');
+  if (!select) return;
 
-/* ── Helpers ── */
-const fmt = n => '$' + n.toLocaleString('es-MX');
-const $   = id => document.getElementById(id);
-const qs  = s  => document.querySelector(s);
-const qsa = s  => [...document.querySelectorAll(s)];
-
-/* ══════════════════════════════════════════════════
-   TOAST
-══════════════════════════════════════════════════ */
-function showToast(msg) {
-  const t = $('toast');
-  $('toast-msg').textContent = msg;
-  t.classList.add('show');
-  clearTimeout(t._timer);
-  t._timer = setTimeout(() => t.classList.remove('show'), 3000);
+  const categories = [...new Set(PRODUCTS.map(product => product.cat || 'General'))];
+  select.innerHTML = ['Todo', ...categories]
+    .map(category => `<option>${escapeHtml(category)}</option>`)
+    .join('');
 }
 
-/* ══════════════════════════════════════════════════
-   CARRITO
-══════════════════════════════════════════════════ */
+function productCard(product, compact = false) {
+  const disabled = product.stock <= 0;
+  const stockLabel = disabled ? 'Sin inventario' : `${product.stock} disponibles`;
+  const category = product.cat || 'General';
+
+  return `
+    <div class="product-card" data-product-id="${product.id}">
+      <div class="product-img" style="background:${compact ? '#f7fff5' : '#f0f8ff'}">
+        <div class="product-badges">
+          <span class="tag ${disabled ? 'tag-red' : 'tag-dark'}">${escapeHtml(stockLabel)}</span>
+        </div>
+        <div class="product-wishlist">
+          <svg viewBox="0 0 24 24" stroke-width="2">
+            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+          </svg>
+        </div>
+        <span class="p-icon">${escapeHtml(product.icon || 'MI')}</span>
+      </div>
+      <div class="product-info">
+        <div class="product-brand">${escapeHtml(product.brand || 'Monster Inc.')} - ${escapeHtml(category)}</div>
+        <div class="product-name">${escapeHtml(product.name)}</div>
+        <div class="product-stars">
+          <span class="stars">★★★★★</span>
+          <span class="star-count">SKU ${escapeHtml(product.sku || product.id)}</span>
+        </div>
+        <div class="product-price">
+          <span class="price-now">${fmt(product.price)}</span>
+          <span class="price-save">Canal Linea</span>
+        </div>
+        <button class="product-add" ${disabled ? 'disabled style="opacity:.5;cursor:not-allowed"' : ''} onclick="addToCart(${product.id})">
+          ${disabled ? 'Sin inventario' : 'Agregar al carrito'}
+        </button>
+      </div>
+    </div>`;
+}
+
+function renderProducts(list = PRODUCTS) {
+  const grids = qsa('.products-grid');
+  if (grids.length === 0) return;
+
+  if (list.length === 0) {
+    grids[0].innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--muted)">No hay productos disponibles.</div>';
+    return;
+  }
+
+  grids[0].innerHTML = list.map(product => productCard(product)).join('');
+
+  if (grids[1]) {
+    grids[1].innerHTML = list.slice(0, 3).map(product => productCard(product, true)).join('');
+  }
+}
+
 function openCart() {
-  $('cartOverlay').classList.add('open');
-  $('cartPanel').classList.add('open');
+  $('cartOverlay')?.classList.add('open');
+  $('cartPanel')?.classList.add('open');
   renderCart();
 }
+
 function closeCart() {
-  $('cartOverlay').classList.remove('open');
-  $('cartPanel').classList.remove('open');
+  $('cartOverlay')?.classList.remove('open');
+  $('cartPanel')?.classList.remove('open');
 }
 
-function addToCart(nameOrId) {
-  let product = typeof nameOrId === 'number'
-    ? PRODUCTS.find(p => p.id === nameOrId)
-    : PRODUCTS.find(p => p.name.includes(nameOrId) || nameOrId.includes(p.brand));
-  if (!product) product = { id: 99 + Math.random(), name: nameOrId, price: 0, icon: '🛒', brand: '', cat: '' };
-  const existing = cart.find(i => i.product.id === product.id);
-  if (existing) { existing.qty++; } else { cart.push({ product, qty: 1 }); }
+function addToCart(productIdOrName) {
+  const product = typeof productIdOrName === 'number'
+    ? PRODUCTS.find(item => item.id === productIdOrName)
+    : PRODUCTS.find(item => item.name.includes(productIdOrName) || String(productIdOrName).includes(item.brand || ''));
+
+  if (!product) {
+    showToast('Este producto no esta registrado en sistema_ventas');
+    return;
+  }
+
+  if (product.stock <= 0) {
+    showToast('Producto sin inventario disponible');
+    return;
+  }
+
+  const existing = cart.find(item => item.product.id === product.id);
+  if (existing) {
+    if (existing.qty >= product.stock) {
+      showToast('No hay mas inventario disponible');
+      return;
+    }
+    existing.qty++;
+  } else {
+    cart.push({ product, qty: 1 });
+  }
+
   updateCartBadge();
   renderCart();
-  showToast('✓ ' + (product.name || nameOrId).split(' ').slice(0,3).join(' ') + ' agregado');
+  showToast(`${product.name.split(' ').slice(0, 3).join(' ')} agregado`);
 }
 
 function changeQty(productId, delta) {
-  const item = cart.find(i => i.product.id === productId);
+  const item = cart.find(entry => entry.product.id === productId);
   if (!item) return;
+
+  if (delta > 0 && item.qty >= item.product.stock) {
+    showToast('No hay mas inventario disponible');
+    return;
+  }
+
   item.qty += delta;
-  if (item.qty <= 0) cart = cart.filter(i => i.product.id !== productId);
+  if (item.qty <= 0) {
+    cart = cart.filter(entry => entry.product.id !== productId);
+  }
+
   updateCartBadge();
   renderCart();
 }
 
 function removeFromCart(productId) {
-  cart = cart.filter(i => i.product.id !== productId);
+  cart = cart.filter(entry => entry.product.id !== productId);
   updateCartBadge();
   renderCart();
   showToast('Producto eliminado del carrito');
-}
-
-function updateCartBadge() {
-  const total = cart.reduce((s, i) => s + i.qty, 0);
-  $('cart-count').textContent = total;
-}
-
-function renderCart() {
-  const container = $('cart-items');
-  const footerEl  = $('cart-footer');
-  if (cart.length === 0) {
-    container.innerHTML = `
-      <div style="text-align:center;padding:60px 20px;color:var(--muted)">
-        <div style="font-size:64px;margin-bottom:16px">🛒</div>
-        <div style="font-size:15px;font-weight:600;margin-bottom:6px">Tu carrito está vacío</div>
-        <div style="font-size:13px">¡Agrega productos y empieza a ahorrar!</div>
-        <button class="btn btn-primary" style="margin-top:20px" onclick="closeCart()">Explorar productos</button>
-      </div>`;
-    footerEl.style.display = 'none';
-    return;
-  }
-  footerEl.style.display = '';
-  let subtotal = 0;
-  container.innerHTML = cart.map(({ product, qty }) => {
-    const line = product.price * qty;
-    subtotal += line;
-    const shortName = product.name.length > 38 ? product.name.slice(0,38)+'…' : product.name;
-    return `
-      <div class="cart-item">
-        <div class="cart-item-img">${product.icon || '📦'}</div>
-        <div class="cart-item-info">
-          <div class="cart-item-name">${product.brand ? product.brand+' · ' : ''}${shortName}</div>
-          <div class="cart-item-price">${product.price ? fmt(product.price) : '—'}</div>
-          <div class="cart-item-qty">
-            <button class="qty-btn" onclick="changeQty(${JSON.stringify(product.id)}, -1)">−</button>
-            <span class="qty-val">${qty}</span>
-            <button class="qty-btn" onclick="changeQty(${JSON.stringify(product.id)}, 1)">+</button>
-            <button onclick="removeFromCart(${JSON.stringify(product.id)})" style="margin-left:auto;background:none;border:none;cursor:pointer;color:var(--muted);font-size:18px" title="Eliminar">🗑</button>
-          </div>
-          ${qty > 1 && product.price ? `<div style="font-size:11px;color:var(--accent);font-weight:600;margin-top:4px">Total línea: ${fmt(line)}</div>` : ''}
-        </div>
-      </div>`;
-  }).join('');
-
-  const free = subtotal >= 599;
-  $('cart-subtotal').textContent       = fmt(subtotal);
-  $('cart-shipping-label').textContent = free ? '🚚 Envío gratis' : '📦 Envío';
-  $('cart-shipping-msg').textContent   = free ? '¡Lo tienes!' : `Faltan ${fmt(599 - subtotal)}`;
-  $('cart-total-amount').textContent   = fmt(subtotal);
-}
-
-async function checkout() {
-  if (cart.length === 0) { showToast('Tu carrito está vacío'); return; }
-  const total = cart.reduce((s, i) => s + i.product.price * i.qty, 0);
-  showToast('⏳ Registrando compra en base de datos...');
-
-  // Nombres aleatorios de Monsters Inc para simular la compra en el sistema interno
-  const names = ['Sulley Sullivan', 'Mike Wazowski', 'Boo', 'Randall Boggs', 'Celia Mae', 'Roz', 'Henry Waternoose'];
-  const emails = ['sulley@monsters.com', 'wazowski@monsters.com', 'boo@humanworld.com', 'randall@monsters.com', 'celia@monsters.com', 'roz@cda.com', 'waternoose@monsters.com'];
-  const idx = Math.floor(Math.random() * names.length);
-  
-  const paymentMethods = ['Tarjeta de Crédito', 'PayPal', 'SPEI', 'OXXO Pay'];
-  const randomPayment = paymentMethods[Math.floor(Math.random() * paymentMethods.length)];
-
-  const saleData = {
-    cliente_nombre: names[idx],
-    cliente_email: emails[idx],
-    metodo_pago: randomPayment,
-    notas: 'Compra automática simulada desde el carrito online.',
-    items: cart.map(i => ({
-      id: i.product.id,
-      qty: i.qty
-    }))
-  };
-
-  try {
-    const res = await fetch('api.php?action=create_sale', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(saleData)
-    });
-    const data = await res.json();
-    
-    if (data.success) {
-      cart = [];
-      updateCartBadge();
-      renderCart();
-      closeCart();
-      showToast(`✓ ¡Compra #${data.venta_id} guardada en BD!`);
-      alert(`🎉 ¡Compra exitosa!\n\nSe ha registrado la Venta #${data.venta_id} en la base de datos a nombre de ${saleData.cliente_nombre}.\nTotal: ${fmt(data.total)}\n\nVe a la pestaña de "Admin" en el menú superior para verla reflejada en el sistema interno.`);
-    } else {
-      showToast('⚠️ Error: ' + data.error);
-      alert('Error de inventario: ' + data.error);
-    }
-  } catch (err) {
-    showToast('⚠️ Error de conexión con la base de datos');
-    console.error(err);
-  }
 }
 
 function clearCart() {
@@ -186,169 +192,305 @@ function clearCart() {
   showToast('Carrito vaciado');
 }
 
-/* ══════════════════════════════════════════════════
-   WISHLIST
-══════════════════════════════════════════════════ */
-function toggleWishlist(productId, btn) {
-  const svg = btn.querySelector('svg');
-  if (wishlist.has(productId)) {
-    wishlist.delete(productId);
-    svg.style.fill = 'none';
-    svg.style.stroke = 'var(--muted)';
-    showToast('Eliminado de favoritos');
-  } else {
-    wishlist.add(productId);
-    svg.style.fill = 'var(--accent)';
-    svg.style.stroke = 'var(--accent)';
-    showToast('❤️ Agregado a favoritos');
+function updateCartBadge() {
+  const badge = $('cart-count');
+  if (badge) {
+    badge.textContent = cart.reduce((total, item) => total + item.qty, 0);
   }
 }
 
+function renderCart() {
+  const container = $('cart-items');
+  const footer = $('cart-footer');
+  if (!container || !footer) return;
+
+  if (cart.length === 0) {
+    container.innerHTML = `
+      <div style="text-align:center;padding:60px 20px;color:var(--muted)">
+        <div style="font-size:44px;margin-bottom:16px">MI</div>
+        <div style="font-size:15px;font-weight:600;margin-bottom:6px">Tu carrito esta vacio</div>
+        <div style="font-size:13px">Agrega productos del catalogo conectado al ERP.</div>
+        <button class="btn btn-primary" style="margin-top:20px" onclick="closeCart()">Explorar productos</button>
+      </div>`;
+    footer.style.display = 'none';
+    return;
+  }
+
+  footer.style.display = '';
+  let subtotal = 0;
+
+  container.innerHTML = cart.map(({ product, qty }) => {
+    const line = product.price * qty;
+    subtotal += line;
+    const shortName = product.name.length > 38 ? `${product.name.slice(0, 38)}...` : product.name;
+
+    return `
+      <div class="cart-item">
+        <div class="cart-item-img">${escapeHtml(product.icon || 'MI')}</div>
+        <div class="cart-item-info">
+          <div class="cart-item-name">${escapeHtml(product.brand || 'Monster Inc.')} - ${escapeHtml(shortName)}</div>
+          <div class="cart-item-price">${fmt(product.price)}</div>
+          <div class="cart-item-qty">
+            <button class="qty-btn" onclick="changeQty(${product.id}, -1)">-</button>
+            <span class="qty-val">${qty}</span>
+            <button class="qty-btn" onclick="changeQty(${product.id}, 1)">+</button>
+            <button onclick="removeFromCart(${product.id})" style="margin-left:auto;background:none;border:none;cursor:pointer;color:var(--muted);font-size:18px" title="Eliminar">x</button>
+          </div>
+          <div style="font-size:11px;color:var(--accent);font-weight:600;margin-top:4px">Total linea: ${fmt(line)}</div>
+        </div>
+      </div>`;
+  }).join('');
+
+  const freeShipping = subtotal >= 599;
+  $('cart-subtotal').textContent = fmt(subtotal);
+  $('cart-shipping-label').textContent = freeShipping ? 'Envio gratis' : 'Envio';
+  $('cart-shipping-msg').textContent = freeShipping ? 'Aplica' : `Faltan ${fmt(599 - subtotal)}`;
+  $('cart-total-amount').textContent = fmt(subtotal);
+}
+
+async function checkout() {
+  if (cart.length === 0) {
+    showToast('Tu carrito esta vacio');
+    return;
+  }
+
+  const names = ['Sulley Sullivan', 'Mike Wazowski', 'Boo', 'Randall Boggs', 'Celia Mae', 'Roz', 'Henry Waternoose'];
+  const emails = ['sulley@monsters.com', 'wazowski@monsters.com', 'boo@humanworld.com', 'randall@monsters.com', 'celia@monsters.com', 'roz@cda.com', 'waternoose@monsters.com'];
+  const index = Math.floor(Math.random() * names.length);
+
+  try {
+    showToast('Registrando compra en sistema_ventas...');
+    const data = await apiRequest('create_sale', {
+      method: 'POST',
+      body: JSON.stringify({
+        cliente_nombre: names[index],
+        cliente_email: emails[index],
+        metodo_pago: 'Linea',
+        notas: 'Compra registrada desde tienda-de-Monsters-Inc.',
+        items: cart.map(item => ({
+          id: item.product.id,
+          qty: item.qty
+        }))
+      })
+    });
+
+    cart = [];
+    updateCartBadge();
+    await loadProductsFromDB();
+    renderCart();
+    closeCart();
+    showToast(`Compra #${data.venta_id} guardada en BD`);
+    alert(`Compra exitosa.\n\nVenta #${data.venta_id} registrada en sistema_ventas.\nTotal: ${fmt(data.total)}\n\nAbre el ERP para ver el inventario actualizado.`);
+  } catch (error) {
+    showToast(error.message);
+    alert(`No se pudo completar la compra: ${error.message}`);
+  }
+}
+
+function ensureCartFooterIds() {
+  const footer = $('cart-footer');
+  if (!footer) return;
+
+  footer.innerHTML = `
+    <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:8px">
+      <span>Subtotal</span><span id="cart-subtotal">$0.00</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:12px;color:#16a34a;margin-bottom:12px">
+      <span id="cart-shipping-label">Envio</span>
+      <span id="cart-shipping-msg">Gratis desde $599</span>
+    </div>
+    <div class="cart-total">
+      <span>Total</span>
+      <strong id="cart-total-amount">$0.00</strong>
+    </div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center;font-size:15px;padding:16px;margin-bottom:8px" onclick="checkout()">Proceder al pago</button>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-outline" style="flex:1;justify-content:center;font-size:13px" onclick="closeCart()">Seguir comprando</button>
+      <button class="btn btn-outline" style="padding:14px 16px;font-size:13px;color:var(--muted)" onclick="clearCart()" title="Vaciar carrito">Vaciar</button>
+    </div>`;
+  footer.style.display = 'none';
+}
+
+function toggleWishlist(productId, button) {
+  const svg = button.querySelector('svg');
+  if (wishlist.has(productId)) {
+    wishlist.delete(productId);
+    if (svg) {
+      svg.style.fill = 'none';
+      svg.style.stroke = 'var(--muted)';
+    }
+    showToast('Eliminado de favoritos');
+    return;
+  }
+
+  wishlist.add(productId);
+  if (svg) {
+    svg.style.fill = 'var(--accent)';
+    svg.style.stroke = 'var(--accent)';
+  }
+  showToast('Agregado a favoritos');
+}
+
 function initWishlistButtons() {
-  qsa('.product-wishlist').forEach((btn, i) => {
-    const product = PRODUCTS[i];
-    if (!product) return;
-    btn.onclick = e => { e.stopPropagation(); toggleWishlist(product.id, btn); };
-    btn.title = 'Agregar a favoritos';
+  qsa('.product-card').forEach(card => {
+    const productId = Number(card.dataset.productId);
+    const button = card.querySelector('.product-wishlist');
+    if (!button || !productId) return;
+
+    button.onclick = event => {
+      event.stopPropagation();
+      toggleWishlist(productId, button);
+    };
+    button.title = 'Agregar a favoritos';
   });
 }
 
 function openWishlist() {
-  if (wishlist.size === 0) { showToast('Tu lista de favoritos está vacía ♡'); return; }
-  showToast('❤️ ' + wishlist.size + ' producto(s) en favoritos');
+  if (wishlist.size === 0) {
+    showToast('Tu lista de favoritos esta vacia');
+    return;
+  }
+  showToast(`${wishlist.size} producto(s) en favoritos`);
 }
 
-/* ══════════════════════════════════════════════════
-   BÚSQUEDA
-══════════════════════════════════════════════════ */
 function initSearch() {
-  const input  = qs('.search-bar input');
+  const input = qs('.search-bar input');
   const select = qs('.search-bar select');
-  const btn    = qs('.search-bar button');
+  const button = qs('.search-bar button');
+  if (!input || !select || !button) return;
+
   function doSearch() {
     const query = input.value.trim().toLowerCase();
-    const cat   = select.value;
-    if (!query && cat === 'Todo') { showToast('Escribe algo para buscar'); return; }
-    const results = PRODUCTS.filter(p => {
-      const matchCat   = cat === 'Todo' || p.cat === cat;
-      const matchQuery = !query || p.name.toLowerCase().includes(query) || p.brand.toLowerCase().includes(query);
-      return matchCat && matchQuery;
+    const category = select.value;
+    const results = PRODUCTS.filter(product => {
+      const matchesCategory = category === 'Todo' || product.cat === category;
+      const matchesQuery = !query ||
+        product.name.toLowerCase().includes(query) ||
+        (product.brand || '').toLowerCase().includes(query) ||
+        (product.sku || '').toLowerCase().includes(query);
+
+      return matchesCategory && matchesQuery;
     });
-    if (results.length === 0) {
-      showToast('Sin resultados para "' + (query || cat) + '"');
-    } else {
-      showToast('🔍 ' + results.length + ' resultado(s) para "' + (query || cat) + '"');
-      qs('.products-grid') && qs('.products-grid').scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
+
+    renderProducts(results);
+    initWishlistButtons();
+    showToast(`${results.length} resultado(s)`);
+    qs('.products-grid')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
-  btn.addEventListener('click', doSearch);
-  input.addEventListener('keydown', e => e.key === 'Enter' && doSearch());
+
+  button.addEventListener('click', doSearch);
+  input.addEventListener('keydown', event => {
+    if (event.key === 'Enter') doSearch();
+  });
 }
 
-/* ══════════════════════════════════════════════════
-   NAV CATEGORÍAS
-══════════════════════════════════════════════════ */
 function initNavCats() {
-  qsa('.nav-cat').forEach(cat => {
-    cat.addEventListener('click', function(e) {
-      e.preventDefault();
-      qsa('.nav-cat').forEach(c => c.classList.remove('active'));
-      this.classList.add('active');
-      showToast('📂 ' + this.textContent.trim().replace('☰ ',''));
+  qsa('.nav-cat').forEach(category => {
+    category.addEventListener('click', event => {
+      event.preventDefault();
+      qsa('.nav-cat').forEach(item => item.classList.remove('active'));
+      category.classList.add('active');
+      showToast(category.textContent.trim());
     });
   });
 }
 
 function initProductFilters() {
-  const btns = qsa('.section-header .btn');
-  btns.forEach(btn => {
-    btn.addEventListener('click', function() {
-      btns.forEach(b => { b.className = b.className.replace('btn-dark','btn-outline'); });
-      this.className = this.className.replace('btn-outline','btn-dark');
-      showToast('Ordenando: ' + this.textContent.trim());
+  qsa('.section-header .btn').forEach(button => {
+    button.addEventListener('click', () => {
+      showToast(`Ordenando: ${button.textContent.trim()}`);
     });
   });
 }
 
 function initCatCards() {
   qsa('.cat-card').forEach(card => {
-    card.addEventListener('click', function() {
-      const name = this.querySelector('.cat-name').textContent;
-      showToast('📂 Filtrando: ' + name);
-      qs('.products-grid') && qs('.products-grid').scrollIntoView({ behavior:'smooth', block:'start' });
+    card.addEventListener('click', () => {
+      const name = card.querySelector('.cat-name')?.textContent || 'Categoria';
+      showToast(`Filtrando: ${name}`);
+      qs('.products-grid')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   });
 }
 
-/* ══════════════════════════════════════════════════
-   TIMER
-══════════════════════════════════════════════════ */
 function initTimer() {
-  let h = 8, m = 47, s = 33;
-  function tick() {
+  let h = 8;
+  let m = 47;
+  let s = 33;
+  setInterval(() => {
     s--;
-    if (s < 0) { s = 59; m--; if (m < 0) { m = 59; h--; if (h < 0) { h = 0; m = 0; s = 0; } } }
-    if ($('t-h')) $('t-h').textContent = String(h).padStart(2,'0');
-    if ($('t-m')) $('t-m').textContent = String(m).padStart(2,'0');
-    if ($('t-s')) $('t-s').textContent = String(s).padStart(2,'0');
-  }
-  setInterval(tick, 1000);
+    if (s < 0) {
+      s = 59;
+      m--;
+    }
+    if (m < 0) {
+      m = 59;
+      h = Math.max(0, h - 1);
+    }
+    if ($('t-h')) $('t-h').textContent = String(h).padStart(2, '0');
+    if ($('t-m')) $('t-m').textContent = String(m).padStart(2, '0');
+    if ($('t-s')) $('t-s').textContent = String(s).padStart(2, '0');
+  }, 1000);
 }
 
-/* ══════════════════════════════════════════════════
-   NEWSLETTER
-══════════════════════════════════════════════════ */
 function initNewsletter() {
-  const btn   = qs('.newsletter-btn');
+  const button = qs('.newsletter-btn');
   const input = qs('.newsletter-input');
-  if (!btn || !input) return;
+  if (!button || !input) return;
+
   const submit = () => {
     const email = input.value.trim();
-    if (!email || !email.includes('@')) { showToast('⚠️ Ingresa un correo válido'); return; }
-    showToast('🎉 ¡Suscrito! Ofertas para: ' + email);
+    if (!email || !email.includes('@')) {
+      showToast('Ingresa un correo valido');
+      return;
+    }
+    showToast(`Suscripcion registrada para ${email}`);
     input.value = '';
   };
-  btn.addEventListener('click', submit);
-  input.addEventListener('keydown', e => e.key === 'Enter' && submit());
+
+  button.addEventListener('click', submit);
+  input.addEventListener('keydown', event => {
+    if (event.key === 'Enter') submit();
+  });
 }
 
-/* ══════════════════════════════════════════════════
-   MISCELÁNEOS
-══════════════════════════════════════════════════ */
 function initBrands() {
-  qsa('.brand-item').forEach(b => b.addEventListener('click', () => showToast('🏷️ ' + b.textContent.trim())));
+  qsa('.brand-item').forEach(brand => {
+    brand.addEventListener('click', () => showToast(brand.textContent.trim()));
+  });
 }
 
 function initSocial() {
-  const labels = ['Facebook','Instagram','YouTube','TikTok'];
-  qsa('.social-btn').forEach((btn,i) => btn.addEventListener('click', () => showToast('Ir a ' + (labels[i]||'redes sociales'))));
+  qsa('.social-btn').forEach(button => {
+    button.addEventListener('click', () => showToast('Red social disponible'));
+  });
 }
 
 function initPaymentIcons() {
   qsa('.payment-icon').forEach(icon => {
     icon.style.cursor = 'pointer';
-    icon.addEventListener('click', () => showToast('💳 ' + icon.textContent.trim() + ' disponible'));
+    icon.addEventListener('click', () => showToast(`${icon.textContent.trim()} disponible`));
   });
 }
 
 function initReviews() {
   qsa('.review-card').forEach(card => {
-    const btn = document.createElement('button');
-    btn.innerHTML = '👍 Útil';
-    btn.style.cssText = 'margin-top:12px;background:none;border:1px solid var(--border);border-radius:20px;padding:4px 14px;font-size:12px;cursor:pointer;color:var(--muted);font-family:var(--font-body)';
-    btn.addEventListener('click', function() {
-      if (this.dataset.liked) return;
-      this.dataset.liked = '1';
-      this.innerHTML = '👍 ¡Gracias!';
-      this.style.color = 'var(--accent)';
-      this.style.borderColor = 'var(--accent)';
+    const button = document.createElement('button');
+    button.textContent = 'Util';
+    button.style.cssText = 'margin-top:12px;background:none;border:1px solid var(--border);border-radius:20px;padding:4px 14px;font-size:12px;cursor:pointer;color:var(--muted);font-family:var(--font-body)';
+    button.addEventListener('click', () => {
+      button.textContent = 'Gracias';
+      button.style.color = 'var(--accent)';
+      button.style.borderColor = 'var(--accent)';
     });
-    card.appendChild(btn);
+    card.appendChild(button);
   });
 }
 
 function initStickyHeader() {
   const header = qs('header');
+  if (!header) return;
+
   window.addEventListener('scroll', () => {
     header.style.boxShadow = window.scrollY > 10 ? '0 4px 24px rgba(0,0,0,.12)' : 'none';
   }, { passive: true });
@@ -357,106 +499,52 @@ function initStickyHeader() {
 function initAnnouncementBar() {
   const bar = qs('.announcement-bar');
   if (!bar) return;
-  const msgs = [
-    '🚚 Envío GRATIS en compras mayores a $599',
-    '💳 3, 6 y 12 meses sin intereses',
-    '🔥 ¡Descuentos hasta 60% OFF en electrónica!',
-    '🎁 Regístrate y obtén $200 de bienvenida',
-    '⭐ Club Monsters: precios exclusivos todo el año',
+
+  const messages = [
+    'Envio gratis en compras mayores a $599',
+    'Precios conectados al canal Linea',
+    'Inventario sincronizado con ERP',
+    'Ventas registradas en sistema_ventas'
   ];
-  let idx = 0;
+  let index = 0;
+
   setInterval(() => {
-    idx = (idx + 1) % msgs.length;
-    bar.style.opacity = '0';
-    bar.style.transition = 'opacity .3s';
-    setTimeout(() => {
-      const span = bar.querySelector('span');
-      if (span) span.textContent = msgs[idx];
-      bar.style.opacity = '1';
-    }, 300);
+    index = (index + 1) % messages.length;
+    const span = bar.querySelector('span');
+    if (span) span.textContent = messages[index];
   }, 4000);
 }
 
 function initBackToTop() {
-  const btn = document.createElement('button');
-  btn.innerHTML = '↑';
-  btn.title = 'Volver arriba';
-  btn.style.cssText = 'position:fixed;bottom:80px;right:24px;width:44px;height:44px;background:var(--primary);color:#fff;border:none;border-radius:50%;font-size:18px;font-weight:700;cursor:pointer;z-index:999;opacity:0;pointer-events:none;transition:opacity .3s;box-shadow:0 4px 16px rgba(0,0,0,.25)';
-  document.body.appendChild(btn);
+  const button = document.createElement('button');
+  button.textContent = '^';
+  button.title = 'Volver arriba';
+  button.style.cssText = 'position:fixed;bottom:80px;right:24px;width:44px;height:44px;background:var(--primary);color:#fff;border:none;border-radius:50%;font-size:18px;font-weight:700;cursor:pointer;z-index:999;opacity:0;pointer-events:none;transition:opacity .3s;box-shadow:0 4px 16px rgba(0,0,0,.25)';
+  document.body.appendChild(button);
+
   window.addEventListener('scroll', () => {
     const show = window.scrollY > 400;
-    btn.style.opacity = show ? '1' : '0';
-    btn.style.pointerEvents = show ? 'all' : 'none';
+    button.style.opacity = show ? '1' : '0';
+    button.style.pointerEvents = show ? 'all' : 'none';
   }, { passive: true });
-  btn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+
+  button.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
 }
 
 function initProgressBar() {
   const fill = qs('.progress-fill');
-  if (!fill) return;
-  fill.style.width = '0%';
-  const obs = new IntersectionObserver(entries => {
-    if (entries[0].isIntersecting) {
-      fill.style.transition = 'width 1.5s ease';
-      fill.style.width = '67%';
-      obs.disconnect();
-    }
-  }, { threshold: 0.3 });
-  obs.observe(fill);
+  if (fill) fill.style.width = '67%';
 }
 
 function initProductAnimations() {
-  const cards = qsa('.product-card, .cat-card, .review-card, .hero-card, .promo-card');
-  const obs = new IntersectionObserver(entries => {
-    entries.forEach((e, i) => {
-      if (e.isIntersecting) {
-        setTimeout(() => {
-          e.target.style.opacity = '1';
-          e.target.style.transform = e.target.style.transform.replace(' translateY(24px)','');
-        }, i * 70);
-        obs.unobserve(e.target);
-      }
-    });
-  }, { threshold: 0.08 });
-  cards.forEach(card => {
-    card.style.opacity = '0';
-    card.style.transform = (card.style.transform || '') + ' translateY(24px)';
+  qsa('.product-card, .cat-card, .review-card, .hero-card, .promo-card').forEach(card => {
     card.style.transition = 'opacity .45s ease, transform .45s ease, box-shadow .2s';
-    obs.observe(card);
   });
 }
 
-/* ══════════════════════════════════════════════════
-   FOOTER CARRITO — reescribir para tener IDs
-══════════════════════════════════════════════════ */
-function ensureCartFooterIds() {
-  const footer = $('cart-footer');
-  if (!footer) return;
-  footer.innerHTML = `
-    <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:8px">
-      <span>Subtotal</span><span id="cart-subtotal">$0</span>
-    </div>
-    <div style="display:flex;justify-content:space-between;font-size:12px;color:#16a34a;margin-bottom:12px">
-      <span id="cart-shipping-label">📦 Envío</span>
-      <span id="cart-shipping-msg">Gratis desde $599</span>
-    </div>
-    <div class="cart-total">
-      <span>Total</span>
-      <strong id="cart-total-amount">$0</strong>
-    </div>
-    <button class="btn btn-primary" style="width:100%;justify-content:center;font-size:15px;padding:16px;margin-bottom:8px" onclick="checkout()">Proceder al pago →</button>
-    <div style="display:flex;gap:8px">
-      <button class="btn btn-outline" style="flex:1;justify-content:center;font-size:13px" onclick="closeCart()">Seguir comprando</button>
-      <button class="btn btn-outline" style="padding:14px 16px;font-size:13px;color:var(--muted)" onclick="clearCart()" title="Vaciar carrito">🗑</button>
-    </div>`;
-  footer.style.display = 'none';
-}
-
-/* ══════════════════════════════════════════════════
-   INIT
-══════════════════════════════════════════════════ */
 document.addEventListener('DOMContentLoaded', async () => {
   ensureCartFooterIds();
+  updateCartBadge();
   await loadProductsFromDB();
   initTimer();
   initSearch();
@@ -473,5 +561,4 @@ document.addEventListener('DOMContentLoaded', async () => {
   initBackToTop();
   initProgressBar();
   initProductAnimations();
-  updateCartBadge();
 });
