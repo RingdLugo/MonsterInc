@@ -81,6 +81,39 @@ Cuando el cliente compra en la tienda:
 
 El ERP consulta la misma base. Al recargar el ERP, ve el inventario actualizado por las ventas de la tienda. Para punto de venta interno, el ERP usa precios del canal `Fisica`. Al registrar productos desde el ERP, se crean precios para `Linea`, `Fisica` y `Corporativo`.
 
+## Problematica cubierta
+
+El sistema atiende las situaciones del caso y del PDF:
+
+- integra informacion de sucursales fisicas, tienda en linea y atencion corporativa;
+- evita bases separadas por canal;
+- permite comparar ventas por canal y por region;
+- administra productos con precio por canal;
+- mantiene inventario centralizado por sucursal;
+- registra clientes, ventas, facturas, envios, empleados y bitacora;
+- conserva historial de categorias en `CATEGORIA_PRODUCTO`;
+- permite tomar decisiones con informacion consolidada.
+
+## Funciones del ERP
+
+El ERP ya opera contra `sistema_ventas` en estos modulos:
+
+- punto de venta interno con canal `Fisica`, `Linea` o `Corporativo`;
+- graficas de ventas comparativas por canal;
+- graficas de desempeno por region;
+- gestion de productos;
+- gestion de clientes con totales separados por canal;
+- inventario por sucursal;
+- ajuste de inventario;
+- gestion de empleados;
+- desactivacion de empleados;
+- consulta de roles;
+- consulta de envios;
+- consulta de facturas;
+- bitacora exportable a CSV.
+
+Al cargar el ERP, si no existen datos suficientes para comparar los tres canales, se crean datos iniciales de demostracion para `Linea`, `Fisica` y `Corporativo`.
+
 ## Credenciales del ERP
 
 El ERP valida usuarios contra la tabla `EMPLEADO`. Las contrasenas se guardan hasheadas con `password_hash`.
