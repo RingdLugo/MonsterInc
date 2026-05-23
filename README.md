@@ -1,52 +1,47 @@
 # Monster, Inc. Corporation
 
-Este repositorio contiene la conexion centralizada para que la tienda en linea y el ERP trabajen sobre la misma base de datos local: `sistema_ventas`.
+Proyecto local con dos sistemas conectados a una sola base de datos MySQL llamada `sistema_ventas`:
 
-## Flujo de trabajo entre sistemas
+- `tienda-de-Monsters-Inc`: tienda en linea para clientes.
+- `ERP-Monsters-Inc`: sistema interno para empleados, productos, ventas e inventario.
 
-La tienda `tienda-de-Monsters-Inc` registra operaciones de clientes, ventas en linea, direcciones de envio, facturacion y detalle de productos vendidos.
+La solucion sigue la arquitectura descrita en la propuesta formal: informacion centralizada, tres canales de venta, inventario sincronizado, precios por canal y estructura relacional con integridad referencial.
 
-El ERP `ERP-Monsters-Inc` administra empleados, roles, sucursales, regiones, inventario, promociones, precios por canal y seguimiento operativo.
+## Requisitos
 
-Ambos sistemas usan wrappers locales de `conexion.php` que apuntan al archivo central del repositorio. De esta forma, una venta realizada desde la tienda queda guardada en las tablas `VENTA` y `DETALLE_VENTA`, mientras que el ERP consulta esa misma informacion para facturacion, inventario y seguimiento.
+- XAMPP con Apache y MySQL activos.
+- PHP 8 o superior.
+- MySQL en `localhost`, puerto `3306`.
+- Usuario MySQL: `root`.
+- Contrasena MySQL: vacia, configuracion local por defecto de XAMPP.
 
-La tienda consume el canal `Linea`. El ERP consume el canal `Fisica` para punto de venta y puede registrar productos con precios para `Linea`, `Fisica` y `Corporativo`.
+En esta computadora Apache esta configurado en el puerto `8080`, por eso las rutas locales usan `http://localhost:8080`.
 
-## Orden correcto para ejecutar en XAMPP
-
-1. Abrir el panel de XAMPP.
-2. Encender `Apache`.
-3. Encender `MySQL`.
-4. Abrir phpMyAdmin en `http://localhost/phpmyadmin`.
-5. Ejecutar por primera vez cualquier archivo PHP que incluya `conexion.php`.
-6. Confirmar que se creo la base `sistema_ventas`.
-7. Abrir la tienda y el ERP desde el navegador.
-
-## Rutas locales esperadas
-
-Si los proyectos estan dentro de `htdocs`, las rutas son:
+## Estructura
 
 ```text
-http://localhost/tienda-de-Monsters-Inc/
-http://localhost/ERP-Monsters-Inc/
+MonsterInc/
+  conexion.php
+  tienda-de-Monsters-Inc/
+    index.html
+    api.php
+    conexion.php
+    script.js
+    estilo.css
+    sistema_interno.php
+  ERP-Monsters-Inc/
+    index.html
+    api.php
+    conexion.php
+    script.js
+    styles.css
 ```
 
-Si estan dentro de una carpeta contenedora, por ejemplo `MonsterInc`, las rutas son:
+## Base de datos
 
-```text
-http://localhost/MonsterInc/tienda-de-Monsters-Inc/
-http://localhost/MonsterInc/ERP-Monsters-Inc/
-```
+El archivo principal `conexion.php` se conecta primero a MySQL sin seleccionar base de datos. Si `sistema_ventas` no existe, la crea y ejecuta el esquema completo.
 
-## Verificacion de base de datos
-
-En phpMyAdmin debe existir la base:
-
-```text
-sistema_ventas
-```
-
-Y deben aparecer las tablas principales:
+Tablas principales:
 
 ```text
 REGION
@@ -71,23 +66,95 @@ ENVIO
 BITACORA
 ```
 
-## Verificacion de inventario y canales
+## Flujo entre tienda y ERP
 
-Para validar la integracion:
+La tienda consulta productos desde `PRODUCTO`, precios vigentes desde `PRECIO_CANAL` con canal `Linea`, y existencias desde `INVENTARIO`.
 
-1. Registrar productos en `PRODUCTO`.
-2. Registrar precios en `PRECIO_CANAL` usando los canales `Linea`, `Fisica` y `Corporativo`.
-3. Registrar existencias por sucursal en `INVENTARIO`.
-4. Hacer una venta desde la tienda con canal `Linea`.
-5. Confirmar que la venta aparezca en `VENTA`.
-6. Confirmar que los productos vendidos aparezcan en `DETALLE_VENTA`.
-7. Revisar en el ERP el inventario de la misma sucursal.
+Cuando el cliente compra en la tienda:
 
-La tienda y el ERP no deben crear bases separadas. Todo debe consultar y modificar `sistema_ventas`.
+1. Se valida que el producto exista.
+2. Se valida inventario disponible.
+3. Se crea o reutiliza el cliente en `CLIENTE`.
+4. Se registra la venta en `VENTA` con canal `Linea`.
+5. Se registran los productos vendidos en `DETALLE_VENTA`.
+6. Se descuenta inventario en `INVENTARIO`.
 
-## Endpoints locales
+El ERP consulta la misma base. Al recargar el ERP, ve el inventario actualizado por las ventas de la tienda. Para punto de venta interno, el ERP usa precios del canal `Fisica`. Al registrar productos desde el ERP, se crean precios para `Linea`, `Fisica` y `Corporativo`.
 
-La tienda usa:
+## Credenciales del ERP
+
+El ERP valida usuarios contra la tabla `EMPLEADO`. Las contrasenas se guardan hasheadas con `password_hash`.
+
+Usuarios disponibles:
+
+```text
+admin@monsters.com
+Admin123*
+```
+
+```text
+gerente@monsters.com
+Gerente123*
+```
+
+```text
+vendedor@monsters.com
+Vendedor123*
+```
+
+## Rutas locales
+
+Tienda:
+
+```text
+http://localhost:8080/MonsterInc/tienda-de-Monsters-Inc/
+```
+
+ERP:
+
+```text
+http://localhost:8080/MonsterInc/ERP-Monsters-Inc/
+```
+
+phpMyAdmin:
+
+```text
+http://localhost:8080/phpmyadmin
+```
+
+Si phpMyAdmin esta configurado por HTTPS en tu XAMPP, tambien puede abrir como:
+
+```text
+https://localhost/phpmyadmin
+```
+
+## Como ejecutar
+
+1. Abrir XAMPP.
+2. Encender `Apache`.
+3. Encender `MySQL`.
+4. Abrir `http://localhost:8080/MonsterInc/tienda-de-Monsters-Inc/`.
+5. Abrir `http://localhost:8080/MonsterInc/ERP-Monsters-Inc/`.
+6. Entrar al ERP con alguna de las credenciales anteriores.
+7. Verificar en phpMyAdmin que exista la base `sistema_ventas`.
+
+## Como probar que funciona
+
+1. Abrir la tienda.
+2. Agregar un producto al carrito.
+3. Abrir `MI CARRITO`.
+4. Cambiar cantidades con `+` o `-`.
+5. Eliminar un producto con `x`.
+6. Presionar `Proceder al pago`.
+7. Capturar nombre, correo y metodo de pago.
+8. Confirmar la compra.
+9. Abrir el ERP.
+10. Revisar que el inventario del producto vendido haya bajado.
+11. Revisar en phpMyAdmin las tablas `VENTA`, `DETALLE_VENTA` e `INVENTARIO`.
+
+## Endpoints
+
+Tienda:
 
 ```text
 tienda-de-Monsters-Inc/api.php?action=get_products
@@ -97,10 +164,24 @@ tienda-de-Monsters-Inc/api.php?action=update_sale
 tienda-de-Monsters-Inc/api.php?action=delete_sale
 ```
 
-El ERP usa:
+ERP:
 
 ```text
+ERP-Monsters-Inc/api.php?action=login
 ERP-Monsters-Inc/api.php?action=initial_data
 ERP-Monsters-Inc/api.php?action=create_product
 ERP-Monsters-Inc/api.php?action=create_sale
+```
+
+## Convencion de commits
+
+Los commits nuevos deben escribirse en primera persona, en minusculas, con lenguaje natural y corto.
+
+Ejemplos:
+
+```text
+ajusto proyectos a base central
+agrego acceso de empleados
+integro tienda con erp
+corrijo carrito de tienda
 ```

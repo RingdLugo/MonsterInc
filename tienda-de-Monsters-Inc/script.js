@@ -10,6 +10,14 @@ const $ = id => document.getElementById(id);
 const qs = selector => document.querySelector(selector);
 const qsa = selector => [...document.querySelectorAll(selector)];
 
+function cartFooterElement() {
+  const footer = $('cart-footer') || qs('.cart-footer');
+  if (footer && !footer.id) {
+    footer.id = 'cart-footer';
+  }
+  return footer;
+}
+
 function escapeHtml(value) {
   return String(value ?? '')
     .replaceAll('&', '&amp;')
@@ -201,7 +209,7 @@ function updateCartBadge() {
 
 function renderCart() {
   const container = $('cart-items');
-  const footer = $('cart-footer');
+  const footer = cartFooterElement();
   if (!container || !footer) return;
 
   if (cart.length === 0) {
@@ -248,24 +256,97 @@ function renderCart() {
   $('cart-total-amount').textContent = fmt(subtotal);
 }
 
-async function checkout() {
+function ensureCheckoutModal() {
+  if ($('checkout-modal')) return;
+
+  const modal = document.createElement('div');
+  modal.id = 'checkout-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1200;display:none;align-items:center;justify-content:center;padding:20px';
+  modal.innerHTML = `
+    <div style="width:min(460px,100%);background:#fff;border-radius:8px;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+      <div style="display:flex;justify-content:space-between;gap:16px;align-items:center;margin-bottom:18px">
+        <h2 style="margin:0;font-size:22px">Confirmar compra</h2>
+        <button type="button" onclick="closeCheckout()" style="border:none;background:#f1f5f9;width:34px;height:34px;border-radius:50%;cursor:pointer">x</button>
+      </div>
+      <div style="display:grid;gap:12px">
+        <label style="display:grid;gap:6px;font-size:13px;font-weight:600">
+          Nombre del cliente
+          <input id="checkout-name" type="text" value="Cliente Tienda Online" style="padding:12px;border:1px solid #d8dee8;border-radius:6px;font:inherit">
+        </label>
+        <label style="display:grid;gap:6px;font-size:13px;font-weight:600">
+          Correo
+          <input id="checkout-email" type="email" value="cliente.online@monsters.com" style="padding:12px;border:1px solid #d8dee8;border-radius:6px;font:inherit">
+        </label>
+        <label style="display:grid;gap:6px;font-size:13px;font-weight:600">
+          Metodo de pago
+          <select id="checkout-payment" style="padding:12px;border:1px solid #d8dee8;border-radius:6px;font:inherit">
+            <option>Tarjeta</option>
+            <option>PayPal</option>
+            <option>SPEI</option>
+            <option>OXXO Pay</option>
+          </select>
+        </label>
+      </div>
+      <div style="margin-top:18px;border-top:1px solid #e5e7eb;padding-top:16px;display:flex;justify-content:space-between;font-weight:700">
+        <span>Total</span>
+        <span id="checkout-total">$0.00</span>
+      </div>
+      <button type="button" onclick="confirmCheckout()" style="width:100%;margin-top:18px;padding:14px;border:none;border-radius:6px;background:var(--primary);color:#fff;font-weight:700;cursor:pointer">
+        Pagar y registrar venta
+      </button>
+    </div>`;
+
+  modal.addEventListener('click', event => {
+    if (event.target === modal) closeCheckout();
+  });
+
+  document.body.appendChild(modal);
+}
+
+function openCheckout() {
   if (cart.length === 0) {
     showToast('Tu carrito esta vacio');
     return;
   }
 
-  const names = ['Sulley Sullivan', 'Mike Wazowski', 'Boo', 'Randall Boggs', 'Celia Mae', 'Roz', 'Henry Waternoose'];
-  const emails = ['sulley@monsters.com', 'wazowski@monsters.com', 'boo@humanworld.com', 'randall@monsters.com', 'celia@monsters.com', 'roz@cda.com', 'waternoose@monsters.com'];
-  const index = Math.floor(Math.random() * names.length);
+  ensureCheckoutModal();
+  const total = cart.reduce((sum, item) => sum + item.product.price * item.qty, 0);
+  $('checkout-total').textContent = fmt(total);
+  $('checkout-modal').style.display = 'flex';
+}
+
+function closeCheckout() {
+  const modal = $('checkout-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+async function confirmCheckout() {
+  const name = $('checkout-name')?.value.trim();
+  const email = $('checkout-email')?.value.trim();
+  const payment = $('checkout-payment')?.value || 'Tarjeta';
+
+  if (!name || !email || !email.includes('@')) {
+    showToast('Captura nombre y correo validos');
+    return;
+  }
+
+  await checkout({ name, email, payment });
+}
+
+async function checkout(customer) {
+  if (cart.length === 0) {
+    showToast('Tu carrito esta vacio');
+    return;
+  }
 
   try {
     showToast('Registrando compra en sistema_ventas...');
     const data = await apiRequest('create_sale', {
       method: 'POST',
       body: JSON.stringify({
-        cliente_nombre: names[index],
-        cliente_email: emails[index],
-        metodo_pago: 'Linea',
+        cliente_nombre: customer.name,
+        cliente_email: customer.email,
+        metodo_pago: customer.payment,
         notas: 'Compra registrada desde tienda-de-Monsters-Inc.',
         items: cart.map(item => ({
           id: item.product.id,
@@ -278,6 +359,7 @@ async function checkout() {
     updateCartBadge();
     await loadProductsFromDB();
     renderCart();
+    closeCheckout();
     closeCart();
     showToast(`Compra #${data.venta_id} guardada en BD`);
     alert(`Compra exitosa.\n\nVenta #${data.venta_id} registrada en sistema_ventas.\nTotal: ${fmt(data.total)}\n\nAbre el ERP para ver el inventario actualizado.`);
@@ -288,7 +370,7 @@ async function checkout() {
 }
 
 function ensureCartFooterIds() {
-  const footer = $('cart-footer');
+  const footer = cartFooterElement();
   if (!footer) return;
 
   footer.innerHTML = `
@@ -303,7 +385,7 @@ function ensureCartFooterIds() {
       <span>Total</span>
       <strong id="cart-total-amount">$0.00</strong>
     </div>
-    <button class="btn btn-primary" style="width:100%;justify-content:center;font-size:15px;padding:16px;margin-bottom:8px" onclick="checkout()">Proceder al pago</button>
+    <button class="btn btn-primary" style="width:100%;justify-content:center;font-size:15px;padding:16px;margin-bottom:8px" onclick="openCheckout()">Proceder al pago</button>
     <div style="display:flex;gap:8px">
       <button class="btn btn-outline" style="flex:1;justify-content:center;font-size:13px" onclick="closeCart()">Seguir comprando</button>
       <button class="btn btn-outline" style="padding:14px 16px;font-size:13px;color:var(--muted)" onclick="clearCart()" title="Vaciar carrito">Vaciar</button>
