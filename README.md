@@ -1,232 +1,114 @@
-# Monster, Inc. Corporation
+# 🏢 Monsters Inc. ERP & Tienda Online — Solución Corporativa e Integración de Ventas
 
-Proyecto local con dos sistemas conectados a una sola base de datos MySQL llamada `sistema_ventas`:
+Este proyecto es una plataforma empresarial integrada localmente que consta de dos sistemas conectados a una sola base de datos MySQL llamada `sistema_ventas`:
 
-- `tienda-de-Monsters-Inc`: tienda en linea para clientes.
-- `ERP-Monsters-Inc`: sistema interno para empleados, productos, ventas e inventario.
+1.  **🛒 Tienda de Monsters Inc (`tienda-de-Monsters-Inc`)**: Canal de e-commerce donde los clientes finales consultan stock en tiempo real y realizan compras.
+2.  **💼 Monsters Inc ERP (`ERP-Monsters-Inc`)**: Consola interna de administración para la gestión de inventarios, procesamiento de ventas (punto de venta físico y corporativo), emisión de CFDI (Facturación Fiscal), corte de caja dinámico, y control de accesos basado en roles (RBAC).
 
-La solucion sigue la arquitectura descrita en la propuesta formal: informacion centralizada, tres canales de venta, inventario sincronizado, precios por canal y estructura relacional con integridad referencial.
+---
 
-## Requisitos
+## 📈 Resolución de la Problemática del Negocio
 
-- XAMPP con Apache y MySQL activos.
-- PHP 8 o superior.
-- MySQL en `localhost`, puerto `3306`.
-- Usuario MySQL: `root`.
-- Contrasena MySQL: vacia, configuracion local por defecto de XAMPP.
+De acuerdo con los requerimientos entregados (situación de ventas multicanal e inconsistencia de reportes), la arquitectura de esta solución resuelve cada punto de la siguiente manera:
 
-En esta computadora Apache esta configurado en el puerto `8080`, por eso las rutas locales usan `http://localhost:8080`.
+| Situación a Resolver (Caso de Estudio) | Implementación Técnica y de Base de Datos | Componente del ERP / Tienda |
+| :--- | :--- | :--- |
+| **Múltiples canales de venta inconexos** | Unificación en la tabla `VENTA` con el atributo `canal_venta` estructurado como `ENUM('Linea', 'Fisica', 'Corporativo')`. | Dashboard consolidado en tiempo real. |
+| **Los precios varían por canal** | Tabla relacional `PRECIO_CANAL` que permite fijar montos específicos para cada SKU según el canal de venta y rango de fechas. | Tienda (Canal Linea) y ERP (Punto Físico / Corporativo). |
+| **Clientes duplicados o incompletos** | Normalización de datos en 3FN separando `CLIENTE`, `DIRECCION_CLIENTE` y `CUENTA_CLIENTE` con llaves primarias y foráneas únicas. | Módulo de Clientes del ERP. |
+| **Los productos cambian de categoría** | Tabla `CATEGORIA_PRODUCTO` con vigencia temporal (`fecha_inicio` y `fecha_fin`) para rastreo analítico e histórico de categorías. | Base de datos e Inventarios. |
+| **Información no uniforme por canal** | La tabla `ENVIO` y `ESTADO_ENVIO` solo se asocia a ventas no presenciales (`Linea` y `Corporativo`). Las físicas no requieren envío. | Procesamiento de ventas. |
+| **Análisis por períodos de tiempo** | Consultas dinámicas sobre `VENTA` filtrando por fecha (`fecha_venta`). | Corte de caja (Semanal, Mensual, Rango Libre). |
+| **Visión consolidada y reportes manuales** | Consultas agregadas con `SUM` y `COUNT` en la base de datos, mostradas en gráficos interactivos actualizables. | Dashboard principal con descarga en CSV. |
 
-## Estructura
+---
 
-```text
-MonsterInc/
-  conexion.php
-  tienda-de-Monsters-Inc/
-    index.html
-    api.php
-    conexion.php
-    script.js
-    estilo.css
-    sistema_interno.php
-  ERP-Monsters-Inc/
-    index.html
-    api.php
-    conexion.php
-    script.js
-    styles.css
-```
+## 🛠️ Arquitectura de la Base de Datos
 
-## Base de datos
+La estructura relacional (esquema `MonsterInc.sql`) garantiza la integridad referencial y previene inconsistencias mediante restricciones de llave foránea (`FOREIGN KEY`), triggers y transacciones controladas.
 
-El archivo principal `conexion.php` se conecta primero a MySQL sin seleccionar base de datos. Si `sistema_ventas` no existe, la crea y ejecuta el esquema completo.
+### Tablas Principales del Sistema
+*   **Geografía y Estructura**: `REGION` y `SUCURSAL` (representan el alcance geográfico de la empresa).
+*   **Gestión de Accesos (RBAC)**: `ROL`, `PERMISO` y `ROL_PERMISO` (control dinámico de visibilidad en interfaz).
+*   **Personal**: `EMPLEADO` (autenticación segura con hash `password_hash`).
+*   **Clientes**: `CLIENTE`, `CUENTA_CLIENTE` y `DIRECCION_CLIENTE`.
+*   **Inventario y Catálogo**: `PRODUCTO`, `CATEGORIA_PRODUCTO`, `PRECIO_CANAL` e `INVENTARIO` (control de stock por sucursal).
+*   **Transaccional**: `VENTA` y `DETALLE_VENTA` (guarda `precio_unitario_historico` para no alterar facturas emitidas si cambian los precios del catálogo).
+*   **Fiscal y Logística**: `FACTURA` (emisión de CFDI) y `ENVIO` / `ESTADO_ENVIO` (seguimiento de entregas).
+*   **Auditoría**: `BITACORA` (registro de operaciones de empleados con rol y canal).
 
-Tablas principales:
+---
 
-```text
-REGION
-SUCURSAL
-ROL
-PERMISO
-ROL_PERMISO
-EMPLEADO
-CLIENTE
-CUENTA_CLIENTE
-DIRECCION_CLIENTE
-PRODUCTO
-CATEGORIA_PRODUCTO
-PRECIO_CANAL
-INVENTARIO
-PROMOCION
-VENTA
-DETALLE_VENTA
-FACTURA
-ESTADO_ENVIO
-ENVIO
-BITACORA
-```
+## 💎 Características Premium del ERP
 
-## Flujo entre tienda y ERP
+La interfaz del ERP ha sido optimizada con un diseño visual moderno, transiciones dinámicas y componentes altamente interactivos:
 
-La tienda consulta productos desde `PRODUCTO`, precios vigentes desde `PRECIO_CANAL` con canal `Linea`, y existencias desde `INVENTARIO`.
+*   **⚡ Notificaciones Toast**: Eliminación total de los diálogos `alert()` del navegador. Las alertas de validaciones, éxitos y errores se muestran como popups integrados elegantes en la esquina superior derecha.
+*   **📉 Dashboard Analítico**: Gráficas de barras auto-ajustables que consolidan las ventas netas por canal y la procedencia de los clientes.
+*   **🧾 Autorelleno de Importe de CFDI**: Al emitir un CFDI en el módulo de facturación, el sistema calcula de forma inteligente el monto aproximado de la factura basándose en el historial de consumos del cliente seleccionado para ese canal específico.
+*   **🔐 Modificación de Permisos en Caliente**: Desde la pantalla de Accesos, los Administradores pueden cambiar los privilegios de cualquier Rol. Al instante, el menú del sidebar oculta o muestra las opciones permitidas para la simulación de privilegios.
+*   **📦 Scrollbar Elegante**: La barra lateral incluye un diseño de scroll minimalista para que todas las opciones (incluyendo *Recargar datos de BD* y *Cerrar Sesión*) estén siempre al alcance sin importar la resolución.
 
-Cuando el cliente compra en la tienda:
+---
 
-1. Se valida que el producto exista.
-2. Se valida inventario disponible.
-3. Se crea o reutiliza el cliente en `CLIENTE`.
-4. Se registra la venta en `VENTA` con canal `Linea`.
-5. Se registran los productos vendidos en `DETALLE_VENTA`.
-6. Se descuenta inventario en `INVENTARIO`.
+## 🔑 Credenciales del ERP (Acceso por Roles)
 
-El ERP consulta la misma base. Al recargar el ERP, ve el inventario actualizado por las ventas de la tienda. Para punto de venta interno, el ERP usa precios del canal `Fisica`. Al registrar productos desde el ERP, se crean precios para `Linea`, `Fisica` y `Corporativo`.
+El sistema cuenta con 5 cuentas de empleados configuradas con distintos privilegios en la base de datos:
 
-## Problematica cubierta
+| Rol de Empleado | Correo de Acceso | Contraseña | Permisos Iniciales |
+| :--- | :--- | :--- | :--- |
+| **Administrador** | `admin@monsters.com` | `Admin123*` | Acceso Total a todos los módulos |
+| **Gerente** | `gerente@monsters.com` | `Gerente123*` | Tablero, Ventas, Clientes, Inventarios, Corte |
+| **Vendedor** | `vendedor@monsters.com` | `Vendedor123*` | Tablero, Ventas, Clientes |
+| **Almacén** | `almacen@monsters.com` | `Almacen123*` | Tablero, Inventarios |
+| **Contador** | `contador@monsters.com` | `Contador123*` | Tablero, Facturación, Corte |
 
-El sistema atiende las situaciones del caso y del PDF:
+---
 
-- integra informacion de sucursales fisicas, tienda en linea y atencion corporativa;
-- evita bases separadas por canal;
-- permite comparar ventas por canal y por region;
-- administra productos con precio por canal;
-- mantiene inventario centralizado por sucursal;
-- registra clientes, ventas, facturas, envios, empleados y bitacora;
-- conserva historial de categorias en `CATEGORIA_PRODUCTO`;
-- permite tomar decisiones con informacion consolidada.
+## 🚀 Instalación y Configuración Local
 
-## Funciones del ERP
+### Requisitos Previos
+*   **XAMPP** u otro servidor local con PHP 8.0+ y MySQL.
+*   Apache configurado en el puerto `8080` (si usas el puerto default `80`, recuerda ajustar las URLs).
 
-El ERP ya opera contra `sistema_ventas` en estos modulos:
+### Pasos de Ejecución
+1.  Descarga o copia este directorio en la carpeta raíz de tu servidor local (ej. `C:/xampp/htdocs/MonsterInc/`).
+2.  Abre el Panel de XAMPP e inicia los módulos de **Apache** y **MySQL**.
+3.  Ingresa a la Tienda Online:
+    ```text
+    http://localhost:8080/MonsterInc/tienda-de-Monsters-Inc/
+    ```
+4.  Ingresa al ERP Corporativo:
+    ```text
+    http://localhost:8080/MonsterInc/ERP-Monsters-Inc/
+    ```
+    *La primera vez que abras cualquiera de los dos sistemas, `conexion.php` se encargará de crear la base de datos `sistema_ventas` e importar automáticamente toda la estructura y datos de prueba de `MonsterInc.sql` si aún no existen.*
 
-- punto de venta interno con canal `Fisica`, `Linea` o `Corporativo`;
-- graficas de ventas comparativas por canal;
-- graficas de desempeno por region;
-- gestion de productos;
-- gestion de clientes con totales separados por canal;
-- inventario por sucursal;
-- ajuste de inventario;
-- gestion de empleados;
-- desactivacion de empleados;
-- consulta de roles;
-- consulta de envios;
-- consulta de facturas;
-- bitacora exportable a CSV.
+---
 
-Los nombres visibles de los canales son:
+## 🧪 Guía de Pruebas Integradas (Paso a Paso)
 
-- `Online`: se guarda en la base como `Linea`.
-- `Punto Fisico`: se guarda en la base como `Fisica`.
-- `Corporaciones`: se guarda en la base como `Corporativo`.
+Para demostrar que los canales y la base de datos están correctamente integrados y sincronizados, realiza el siguiente flujo de prueba:
 
-Cada venta descuenta inventario de la sucursal asociada al canal, registra `VENTA` y `DETALLE_VENTA`, genera `FACTURA`, crea `ENVIO` cuando aplica y registra la accion en `BITACORA`. Las graficas se actualizan al recargar los datos desde la base.
+### Prueba A: Compra en la Tienda y Sincronización
+1.  Entra a la **Tienda Online** (`tienda-de-Monsters-Inc`).
+2.  Agrega una *Laptop Lenovo ThinkPad E16* al carrito.
+3.  Haz clic en el botón de tu carrito en la esquina superior derecha y presiona **Proceder al pago**.
+4.  Registra la compra a nombre de un cliente de prueba.
+5.  Abre el **ERP** e inicia sesión como Administrador (`admin@monsters.com`).
+6.  Haz clic en el botón **Recargar datos de BD** en el sidebar. Verás que:
+    *   Las ventas totales del dashboard aumentaron.
+    *   En el módulo de **Inventarios**, el stock del producto disminuyó (el inventario se actualiza dinámicamente).
+    *   En el módulo de **Ventas**, se encuentra registrada la nueva venta bajo el canal `Online` (registrado como `Linea` en la BD).
 
-Los productos iniciales son articulos comerciales reales de ejemplo:
+### Prueba B: Emisión de CFDI (Facturación Fiscal)
+1.  En el ERP, dirígete al menú **Facturación**.
+2.  Selecciona un cliente corporativo (ej. *Tv Azteca S.A*) y selecciona el canal.
+3.  El campo **Importe** se autorellenará basándose en el volumen comercial histórico de ese cliente.
+4.  Presiona **Emitir CFDI**. Verás aparecer un Toast verde indicando que el CFDI fue emitido. El registro se agrega inmediatamente a la tabla histórica de facturas emitidas a la derecha.
 
-- Laptop Lenovo ThinkPad E16.
-- Monitor Samsung 27 pulgadas FHD.
-- Impresora HP LaserJet Pro M404dn.
-- Silla ergonomica Herman Miller Sayl.
-- Cafetera Nespresso Vertuo Pop.
-
-## Flujo operativo del ERP
-
-La version funcional del ERP modela una operacion comercial integrada para Monster Inc.:
-
-- `Online`: pedidos web asignados al centro de distribucion.
-- `Punto Fisico`: venta directa en sucursal.
-- `Corporaciones`: contratos B2B para clientes de alto volumen.
-
-Cada operacion mueve el estado completo de la aplicacion:
-
-- descuenta inventario de articulos reales;
-- genera venta;
-- crea factura/CFDI;
-- genera envio cuando el canal lo requiere;
-- agrega movimiento en bitacora;
-- actualiza graficas, reportes y corte de caja.
-
-La regla operativa es que no haya botones decorativos: cada boton modifica datos, filtra, exporta, genera documentos, cambia estados o actualiza permisos.
-
-## Credenciales del ERP
-
-El ERP valida usuarios contra la tabla `EMPLEADO`. Las contrasenas se guardan hasheadas con `password_hash`.
-
-Al abrir el ERP se muestra la pantalla de inicio de sesion. Despues de entrar, el dashboard queda asociado al rol del empleado y aparece el boton `Cerrar sesion` para salir y permitir que otro usuario entre con sus propios privilegios.
-
-Usuarios disponibles:
-
-```text
-admin@monsters.com
-Admin123*
-```
-
-```text
-gerente@monsters.com
-Gerente123*
-```
-
-```text
-vendedor@monsters.com
-Vendedor123*
-```
-
-```text
-almacen@monsters.com
-Almacen123*
-```
-
-```text
-contador@monsters.com
-Contador123*
-```
-
-## Rutas locales
-
-Tienda:
-
-```text
-http://localhost:8080/MonsterInc/tienda-de-Monsters-Inc/
-```
-
-ERP:
-
-```text
-http://localhost:8080/MonsterInc/ERP-Monsters-Inc/
-```
-
-phpMyAdmin:
-
-```text
-http://localhost:8080/phpmyadmin
-```
-
-Si phpMyAdmin esta configurado por HTTPS en tu XAMPP, tambien puede abrir como:
-
-```text
-https://localhost/phpmyadmin
-```
-
-## Como ejecutar
-
-1. Abrir XAMPP.
-2. Encender `Apache`.
-3. Encender `MySQL`.
-4. Abrir `http://localhost:8080/MonsterInc/tienda-de-Monsters-Inc/`.
-5. Abrir `http://localhost:8080/MonsterInc/ERP-Monsters-Inc/`.
-6. Entrar al ERP con alguna de las credenciales anteriores.
-7. Verificar en phpMyAdmin que exista la base `sistema_ventas`.
-
-## Como probar que funciona
-
-1. Abrir la tienda.
-2. Agregar un producto al carrito.
-3. Abrir `MI CARRITO`.
-4. Cambiar cantidades con `+` o `-`.
-5. Eliminar un producto con `x`.
-6. Presionar `Proceder al pago`.
-7. Capturar nombre, correo y metodo de pago.
-8. Confirmar la compra.
-9. Abrir el ERP.
-10. Revisar que el inventario del producto vendido haya bajado.
-11. Revisar en phpMyAdmin las tablas `VENTA`, `DETALLE_VENTA` e `INVENTARIO`.
-
+### Prueba C: Restricción de Accesos (Seguridad)
+1.  Cierra sesión en el ERP presionando **Cerrar sesión** en la barra lateral.
+2.  Inicia sesión ahora como Almacenista (`almacen@monsters.com` / `Almacen123*`).
+3.  Observa cómo el menú lateral reduce las opciones disponibles: no podrás ver las ventas corporativas ni gestionar roles de acceso.
+4.  Si intentas forzar una acción no autorizada, el sistema desplegará un mensaje de error tipo Toast indicando que no posees el permiso correspondiente.
